@@ -2,6 +2,12 @@ import os
 import numpy as np
 import matplotlib.image as img #not needed for ROS
 
+#########################################################################
+### Notes
+### * Unless otherwise specified, the coordinate frame is in FLU (x-forward, y-left, z-up)
+### * Note that all point cloud data is transformed into the robot base frame
+###   (i.e., the lidar and radar data is not in the sensor frame)
+#########################################################################
 class CpslDS:
 
     def __init__(self,
@@ -18,6 +24,45 @@ class CpslDS:
                  vehicle_odom_folder="vehicle_odom"
 
                  ) -> None:
+        """Initializes the CpslDS class.
+
+        This class provides an interface to access various sensor data from the CPSL datasets.
+
+        Args:
+            dataset_path (str): The path to the dataset directory.
+
+        Keyword Args:
+            radar_folder (str): The name of the folder containing the radar data. Defaults to "radar_0".
+            lidar_folder (str): The name of the folder containing the lidar data. Defaults to "lidar".
+            camera_folder (str): The name of the folder containing the camera data. Defaults to "camera".
+            hand_tracking_folder (str): The name of the folder containing the hand tracking data. Defaults to "hand_tracking".
+            leap_motion_image_left_folder (str): The name of the folder containing the left Leap Motion camera images. Defaults to "leap_images/left".
+            leap_motion_image_right_folder (str): The name of the folder containing the right Leap Motion camera images. Defaults to "leap_images/right".
+            imu_orientation_folder (str): The name of the folder containing the IMU orientation data. Defaults to "imu_data".
+            imu_full_folder (str): The name of the folder containing the full IMU data. Defaults to "imu_full".
+            vehicle_vel_folder (str): The name of the folder containing the vehicle velocity data. Defaults to "vehicle_vel".
+            vehicle_odom_folder (str): The name of the folder containing the vehicle odometry data. Defaults to "vehicle_odom".
+
+        Sensor Data Format:
+            - Radar:
+                - Point Cloud: (N, 4) numpy array with [x, y, z, velocity]
+                - ADC Cube: (rx_channels, samples, chirps) complex numpy array
+            - Lidar:
+                - Point Cloud (filtered): (N, 2) numpy array with [x, y]
+                - Point Cloud (raw): (N, 4) numpy array with [x, y, z, intensity]
+            - Camera:
+                - Image: numpy array with RGB channels
+            - Hand Tracking:
+                - Joints: (21, 3) numpy array with [x, y, z] for each joint
+            - Leap Motion:
+                - Image: numpy array representing the camera image
+            - IMU:
+                - Orientation: heading in radians (float)
+                - Full Data: (N, 7) numpy array with [time, w_x, w_y, w_z, acc_x, acc_y, acc_z]
+            - Vehicle:
+                - Velocity: (N, 3) numpy array with [time, vx, wz]
+                - Odometry: (N, 14) numpy array with [time, x, y, z, quat_w, quat_x, quat_y, quat_z, vx, vy, vz, wx, wy, wz]
+        """
         
       
         #radar data
@@ -144,13 +189,23 @@ class CpslDS:
         return
     
     def get_radar_data(self,idx:int)->np.ndarray:
-        """Get radar detections or ADC data cube for a specific index in the dataset
+        """Get radar detections or ADC data cube for a specific index in the dataset.
+        The format of the returned data depends on whether the raw ADC data or the processed point cloud is available.
+        The radar point cloud data is stored in the base frame of a robot (i.e. it may not be in the radar's coordinate frame)
+
+        - If radar point cloud data is available, the format is a numpy array of shape (N, 4), where N is the number of detections. The columns are:
+            - x (float): x-coordinate in meters
+            - y (float): y-coordinate in meters
+            - z (float): z-coordinate in meters
+            - vel (float): velocity in m/s
+
+        - If raw ADC data is available, the format is a numpy array of shape (rx_channels, samples, chirps) with complex values.
 
         Args:
             idx (int): The index of the radar data detection
 
         Returns:
-            np.ndarray: An Nx4 of radar detections with (x,y,z,vel) vals or 
+            np.ndarray: An Nx4 of radar detections with (x,y,z,vel) vals or
                         (rx_channels) x (samples) x (chirps) ADC cube for a given frame
         """
 
@@ -182,8 +237,9 @@ class CpslDS:
         return
     
     def get_lidar_point_cloud(self,idx)->np.ndarray:
-        """Get a lidar pointcloud from the desired frame,
-        filters out ground and higher detections points
+        """Get a lidar pointcloud from the desired frame, filters out ground and higher detections points.
+
+        The raw lidar data is a point cloud with (x, y, z, intensity) values. This function filters the raw data to remove the ground and high-elevation points, returning only the (x, y) coordinates.
 
         Returns:
             np.ndarray: a Nx2 array of lidar detections (x,y)
@@ -206,8 +262,13 @@ class CpslDS:
         return points
     
     def get_lidar_point_cloud_raw(self,idx)->np.ndarray:
-        """Get a lidar pointcloud from the desired frame,
-        without filtering anything out
+        """Get a lidar pointcloud from the desired frame, without filtering anything out.
+
+        The format of the returned data is a numpy array of shape (N, 4), where N is the number of points. The columns are:
+            - x (float): x-coordinate in meters
+            - y (float): y-coordinate in meters
+            - z (float): z-coordinate in meters
+            - intensity (float): intensity of the point
 
         Returns:
             np.ndarray: a Nx4 array of lidar detections (x,y,z,intensity)
@@ -281,7 +342,17 @@ class CpslDS:
         return
 
     def get_hand_tracking_data(self,idx:int)->np.ndarray:
-        """Get hand tracking data from the dataset
+        """Get hand tracking data from the dataset.
+
+        The format of the returned data is a numpy array of shape (21, 3), where each row represents a joint and the columns are the x, y, and z coordinates.
+
+        The joints are ordered as follows:
+            - 0: Palm position
+            - 1-4: Thumb (metacarpal, proximal, intermediate, distal)
+            - 5-8: Index finger (metacarpal, proximal, intermediate, distal)
+            - 9-12: Middle finger (metacarpal, proximal, intermediate, distal)
+            - 13-16: Ring finger (metacarpal, proximal, intermediate, distal)
+            - 17-20: Pinky finger (metacarpal, proximal, intermediate, distal)
 
         Args:
             idx (int): the index in the dataset to get the hand tracking
@@ -378,7 +449,9 @@ class CpslDS:
         return
     
     def get_imu_orientation_rad(self,idx:int):
-        """Get the raw imu heading from the dataset at a given frame index
+        """Get the raw imu heading from the dataset at a given frame index.
+
+        The data is loaded from a file containing a quaternion [w, x, y, z] and the heading is calculated from it.
 
         Args:
             idx (int): the frame index to get the imu heading for
@@ -423,10 +496,19 @@ class CpslDS:
         return
     
     def get_imu_full_data(self,idx=0):
-        """_summary_
+        """Get the full IMU data from the dataset.
+
+        The format of the returned data is a numpy array of shape (N, 7), where N is the number of measurements. The columns are:
+            - time (float): timestamp in seconds
+            - w_x (float): angular velocity about x-axis in rad/s
+            - w_y (float): angular velocity about y-axis in rad/s
+            - w_z (float): angular velocity about z-axis in rad/s
+            - acc_x (float): linear acceleration along x-axis in m/s^2
+            - acc_y (float): linear acceleration along y-axis in m/s^2
+            - acc_z (float): linear acceleration along z-axis in m/s^2
 
         Args:
-            idx (int, optional): _description_. Defaults to 0.
+            idx (int, optional): The index of the IMU data. Defaults to 0.
 
         Returns:
             np.ndarray: [time,w_x,w_y,w_z,acc_x,acc_y,acc_z]
@@ -458,6 +540,19 @@ class CpslDS:
         return
     
     def get_vehicle_vel_data(self,idx=0):
+        """Get the vehicle velocity data from the dataset.
+
+        The format of the returned data is a numpy array of shape (N, 3), where N is the number of measurements. The columns are:
+            - time (float): timestamp in seconds
+            - vx (float): linear velocity along x-axis in m/s
+            - wz (float): angular velocity about z-axis in rad/s
+
+        Args:
+            idx (int, optional): The index of the vehicle velocity data. Defaults to 0.
+
+        Returns:
+            np.ndarray: [time, vx, wz]
+        """
 
         assert self.vehicle_vel_files, "No Vehicle velocity dataset loaded"
 
@@ -486,13 +581,29 @@ class CpslDS:
         return
     
     def get_vehicle_odom_data(self,idx=0):
-        """Returns  [time,x,y,z,quat_w,quat_x,quat_y,quat_z,vx,vy,vz,wx,wy,wz]
+        """Get the vehicle odometry data from the dataset.
+
+        The format of the returned data is a numpy array of shape (N, 14), where N is the number of measurements. The columns are:
+            - time (float): timestamp in seconds
+            - x (float): x-coordinate in meters
+            - y (float): y-coordinate in meters
+            - z (float): z-coordinate in meters
+            - quat_w (float): w component of the orientation quaternion
+            - quat_x (float): x component of the orientation quaternion
+            - quat_y (float): y component of the orientation quaternion
+            - quat_z (float): z component of the orientation quaternion
+            - vx (float): linear velocity along x-axis in m/s
+            - vy (float): linear velocity along y-axis in m/s
+            - vz (float): linear velocity along z-axis in m/s
+            - wx (float): angular velocity about x-axis in rad/s
+            - wy (float): angular velocity about y-axis in rad/s
+            - wz (float): angular velocity about z-axis in rad/s
 
         Args:
-            idx (int, optional): _description_. Defaults to 0.
+            idx (int, optional): The index of the vehicle odometry data. Defaults to 0.
 
         Returns:
-            _type_: _description_
+            np.ndarray: [time,x,y,z,quat_w,quat_x,quat_y,quat_z,vx,vy,vz,wx,wy,wz]
         """
 
         assert self.vehicle_odom_enabled, "No Vehicle odometry dataset loaded"

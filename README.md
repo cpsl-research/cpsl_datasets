@@ -88,3 +88,88 @@ MAP_DIRECTORY=/data/radnav/maps/
 AHENA_DATASET_DIRECTORY=/data/athena_uav_demo
 ```
 3. Replace the example text with the path to your directory
+
+
+## Accessing Datasets with CpslDS
+
+The `CpslDS` class provides a simple interface to access the various sensor data in the CPSL datasets.
+
+### Initialization
+
+To use the class, first import it and create an instance by providing the path to the dataset:
+
+```python
+from cpsl_datasets import CpslDS
+import os
+
+#get the dataset path from the environment variable
+dataset_path = os.environ.get("MY_DATASET_PATH")
+
+#initialize the CpslDS class
+cpsl_ds = CpslDS(dataset_path)
+```
+
+When initializing, you can also specify the names of the folders for each sensor if they are different from the default values. The following arguments can be provided to the `CpslDS` constructor:
+
+| Argument | Description | Default Value |
+|---|---|---|
+| `dataset_path` | The path to the dataset directory. | (required) |
+| `radar_folder` | The name of the folder containing the radar data. | `"radar_0"` |
+| `lidar_folder` | The name of the folder containing the lidar data. | `"lidar"` |
+| `camera_folder` | The name of the folder containing the camera data. | `"camera"` |
+| `hand_tracking_folder` | The name of the folder containing the hand tracking data. | `"hand_tracking"` |
+| `leap_motion_image_left_folder` | The name of the folder containing the left Leap Motion camera images. | `"leap_images/left"` |
+| `leap_motion_image_right_folder` | The name of the folder containing the right Leap Motion camera images. | `"leap_images/right"` |
+| `imu_orientation_folder` | The name of the folder containing the IMU orientation data. | `"imu_data"` |
+| `imu_full_folder` | The name of the folder containing the full IMU data. | `"imu_full"` |
+| `vehicle_vel_folder` | The name of the folder containing the vehicle velocity data. | `"vehicle_vel"` |
+| `vehicle_odom_folder` | The name of the folder containing the vehicle odometry data. | `"vehicle_odom"` |
+
+### Accessing Sensor Data
+
+Once the `CpslDS` object is created, you can access the data for each sensor using the following methods. Each method takes an index `idx` which corresponds to the frame number in the dataset.
+
+-   **Radar Data**:
+    `get_radar_data(idx)`: Returns radar data. The format depends on the available data:
+    -   **Point Cloud**: A numpy array of shape `(N, 4)` with columns `[x, y, z, velocity]`.
+    -   **ADC Cube**: A complex numpy array of shape `(rx_channels, samples, chirps)`.
+
+-   **Lidar Data**:
+    -   `get_lidar_point_cloud(idx)`: Returns a filtered `(N, 2)` numpy array of lidar detections `[x, y]`.
+    -   `get_lidar_point_cloud_raw(idx)`: Returns a raw `(N, 4)` numpy array of lidar detections `[x, y, z, intensity]`.
+
+-   **Camera Data**:
+    `get_camera_frame(idx)`: Returns a numpy array with RGB channels representing the camera image.
+
+-   **Hand Tracking Data**:
+    `get_hand_tracking_data(idx)`: Returns a `(21, 3)` numpy array of hand joint positions `[x, y, z]`. The joint order is: Palm, Thumb (4 joints), Index (4), Middle (4), Ring (4), Pinky (4).
+
+-   **Leap Motion Image Data**:
+    -   `get_leap_motion_image_frame_left(idx)`: Returns a numpy array representing the left leap motion camera image.
+    -   `get_leap_motion_image_frame_right(idx)`: Returns a numpy array representing the right leap motion camera image.
+
+-   **IMU Data**:
+    -   `get_imu_orientation_rad(idx)`: Returns the IMU heading in radians (`float` from -pi to pi).
+    -   `get_imu_full_data(idx)`: Returns a `(N, 7)` numpy array with the full IMU data `[time, w_x, w_y, w_z, acc_x, acc_y, acc_z]`.
+
+-   **Vehicle Data**:
+    -   `get_vehicle_vel_data(idx)`: Returns a `(N, 3)` numpy array with vehicle velocity data `[time, vx, wz]`.
+    -   `get_vehicle_odom_data(idx)`: Returns a `(N, 14)` numpy array with the full vehicle odometry data `[time, x, y, z, quat_w, quat_x, quat_y, quat_z, vx, vy, vz, wx, wy, wz]`.
+        - Note that velocity data is in the vehicle's coordinate frame, not the global coordinate frame.
+
+You can get the total number of frames in the dataset using the `num_frames` attribute:
+
+```python
+num_frames = cpsl_ds.num_frames
+print(f"The dataset has {num_frames} frames.")
+
+#loop through the dataset and get the data for each frame
+for i in range(num_frames):
+    #get the radar data for the i-th frame
+    radar_data = cpsl_ds.get_radar_data(i)
+
+    #get the lidar data for the i-th frame
+    lidar_data = cpsl_ds.get_lidar_point_cloud(i)
+
+    #... and so on for the other sensors
+```
