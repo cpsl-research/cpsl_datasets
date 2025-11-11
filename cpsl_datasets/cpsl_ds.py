@@ -120,6 +120,41 @@ class CpslDS:
 
         return
 
+    import os
+
+    def print_available_folders(dataset_path)->list:
+        """
+        Prints the names of all subdirectories directly within the given path.
+
+        Args:
+            dataset_path (str): The absolute or relative path to the high level dataset directory.
+        """
+        # Check if the path exists and is a directory
+        if not os.path.isdir(dataset_path):
+            print(f"Error: The path '{dataset_path}' is not a valid directory.")
+            return
+        
+        folders = []
+
+        print(f"Available folders in '{dataset_path}' directory:")
+        try:
+            # Iterate over all the entries in the directory
+            for entry in os.listdir(dataset_path):
+
+                # Create the full path to the entry
+                full_path = os.path.join(dataset_path, entry)
+                # Check if the entry is a directory
+                if os.path.isdir(full_path):
+                    print(entry)
+                    folders.append(entry)
+        except OSError as e:
+            print(f"Error reading directory: {e}")
+        
+        #return the list of folders
+        return folders
+
+
+    
     def load_new_dataset(self,dataset_path:str):
 
         self.dataset_path = dataset_path

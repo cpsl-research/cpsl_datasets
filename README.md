@@ -173,3 +173,7 @@ for i in range(num_frames):
 
     #... and so on for the other sensors
 ```
+
+### Coordinate Frame Notes
+
+Generally, all data should be stored in the standard ROS2 FLU (+X forward, +Y left, +Z up) coordinate frame. 
