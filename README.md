@@ -111,10 +111,14 @@ cpsl_ds = CpslDS(dataset_path)
 
 When initializing, you can also specify the names of the folders for each sensor if they are different from the default values. The following arguments can be provided to the `CpslDS` constructor:
 
+> **Note:** `radar_folder` is now legacy and will default to an empty string. Prefer `radar_adc_folder` and `radar_pc_folder` for the raw ADC cubes and processed point clouds respectively.
+
 | Argument | Description | Default Value |
 |---|---|---|
 | `dataset_path` | The path to the dataset directory. | (required) |
-| `radar_folder` | The name of the folder containing the radar data. | `"radar_0"` |
+| `radar_folder` | The name of the folder containing the radar data. | `""` (deprecated when ADC/point-cloud separates are present) |
+| `radar_adc_folder` | The folder containing the raw radar ADC cubes. | `"radar_adc"` |
+| `radar_pc_folder` | The folder containing the radar point cloud outputs. | `"radar_pc"` |
 | `lidar_folder` | The name of the folder containing the lidar data. | `"lidar"` |
 | `camera_folder` | The name of the folder containing the camera data. | `"camera"` |
 | `hand_tracking_folder` | The name of the folder containing the hand tracking data. | `"hand_tracking"` |
@@ -129,10 +133,10 @@ When initializing, you can also specify the names of the folders for each sensor
 
 Once the `CpslDS` object is created, you can access the data for each sensor using the following methods. Each method takes an index `idx` which corresponds to the frame number in the dataset.
 
--   **Radar Data**:
-    `get_radar_data(idx)`: Returns radar data. The format depends on the available data:
-    -   **Point Cloud**: A numpy array of shape `(N, 4)` with columns `[x, y, z, velocity]`.
-    -   **ADC Cube**: A complex numpy array of shape `(rx_channels, samples, chirps)`.
+-   **Radar Data (new APIs)**:
+    - `get_radar_adc_data(idx)`: Returns the raw radar ADC cube as a complex numpy array of shape `(rx_channels, samples, chirps)`.
+    - `get_radar_point_cloud(idx)`: Returns the radar point cloud as a `(N, 4)` numpy array of `[x, y, z, velocity]` in the base frame.
+    - **Deprecated** `get_radar_data(idx)`: Kept for backward compatibility but will be removed soon. Please migrate callers to either `get_radar_adc_data` or `get_radar_point_cloud` depending on the data you need.
 
 -   **Lidar Data**:
     -   `get_lidar_point_cloud(idx)`: Returns a filtered `(N, 2)` numpy array of lidar detections `[x, y]`.

@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import matplotlib.image as img #not needed for ROS
+import warnings
+
 
 #########################################################################
 ### Notes
@@ -12,16 +14,18 @@ class CpslDS:
 
     def __init__(self,
                  dataset_path,
-                 radar_folder="radar_0",
-                 lidar_folder="lidar",
-                 camera_folder="camera",
-                 hand_tracking_folder="hand_tracking",
-                 leap_motion_image_left_folder="leap_images/left",
-                 leap_motion_image_right_folder="leap_images/right",
-                 imu_orientation_folder="imu_data",
-                 imu_full_folder="imu_full",
-                 vehicle_vel_folder="vehicle_vel",
-                 vehicle_odom_folder="vehicle_odom"
+                 radar_folder="",
+                 radar_adc_folder = "",
+                 radar_pc_folder = "",
+                 lidar_folder="",
+                 camera_folder="",
+                 hand_tracking_folder="",
+                 leap_motion_image_left_folder="",
+                 leap_motion_image_right_folder="",
+                 imu_orientation_folder="",
+                 imu_full_folder="",
+                 vehicle_vel_folder="",
+                 vehicle_odom_folder=""
 
                  ) -> None:
         """Initializes the CpslDS class.
@@ -32,21 +36,25 @@ class CpslDS:
             dataset_path (str): The path to the dataset directory.
 
         Keyword Args:
-            radar_folder (str): The name of the folder containing the radar data. Defaults to "radar_0".
-            lidar_folder (str): The name of the folder containing the lidar data. Defaults to "lidar".
-            camera_folder (str): The name of the folder containing the camera data. Defaults to "camera".
-            hand_tracking_folder (str): The name of the folder containing the hand tracking data. Defaults to "hand_tracking".
-            leap_motion_image_left_folder (str): The name of the folder containing the left Leap Motion camera images. Defaults to "leap_images/left".
-            leap_motion_image_right_folder (str): The name of the folder containing the right Leap Motion camera images. Defaults to "leap_images/right".
-            imu_orientation_folder (str): The name of the folder containing the IMU orientation data. Defaults to "imu_data".
-            imu_full_folder (str): The name of the folder containing the full IMU data. Defaults to "imu_full".
-            vehicle_vel_folder (str): The name of the folder containing the vehicle velocity data. Defaults to "vehicle_vel".
-            vehicle_odom_folder (str): The name of the folder containing the vehicle odometry data. Defaults to "vehicle_odom".
+            radar_folder (str): The name of the folder containing the radar data. Defaults to "".
+            radar_adc_folder (str): The name of the folder containing the radar ADC data. Defaults to "".
+            radar_pc_folder (str): The name of the folder containing the radar point cloud data.
+            lidar_folder (str): The name of the folder containing the lidar data. Defaults to "".
+            camera_folder (str): The name of the folder containing the camera data. Defaults to "".
+            hand_tracking_folder (str): The name of the folder containing the hand tracking data. Defaults to "".
+            leap_motion_image_left_folder (str): The name of the folder containing the left Leap Motion camera images. Defaults to "".
+            leap_motion_image_right_folder (str): The name of the folder containing the right Leap Motion camera images. Defaults to "".
+            imu_orientation_folder (str): The name of the folder containing the IMU orientation data. Defaults to "".
+            imu_full_folder (str): The name of the folder containing the full IMU data. Defaults to "".
+            vehicle_vel_folder (str): The name of the folder containing the vehicle velocity data. Defaults to "".
+            vehicle_odom_folder (str): The name of the folder containing the vehicle odometry data. Defaults to "".
 
         Sensor Data Format:
             - Radar:
                 - Point Cloud: (N, 4) numpy array with [x, y, z, velocity]
                 - ADC Cube: (rx_channels, samples, chirps) complex numpy array
+            - Radar ADC:(rx_channels, samples, chirps) complex numpy array
+            - Radar Point Cloud (N, 4) numpy array with [x, y, z, velocity]
             - Lidar:
                 - Point Cloud (filtered): (N, 2) numpy array with [x, y]
                 - Point Cloud (raw): (N, 4) numpy array with [x, y, z, intensity]
@@ -69,6 +77,16 @@ class CpslDS:
         self.radar_enabled = False
         self.radar_folder = radar_folder
         self.radar_files = []
+
+        #radar adc data
+        self.radar_adc_enabled = False
+        self.radar_adc_folder = radar_adc_folder
+        self.radar_adc_files = []
+
+        #radar point cloud data
+        self.radar_pc_enabled = False
+        self.radar_pc_folder = radar_pc_folder
+        self.radar_pc_files = []
 
         #lidar data
         self.lidar_enabled = False
@@ -163,15 +181,28 @@ class CpslDS:
 
     def import_dataset_files(self):
 
-        self.import_radar_data()
-        self.import_lidar_data()
-        self.import_camera_data()
-        self.import_hand_tracking_data()
-        self.import_leap_motion_image_data()
-        self.import_imu_orientation_data()
-        self.import_imu_full_data()  
-        self.import_vehicle_vel_data()
-        self.import_vehicle_odom_data()
+        if self.radar_folder:
+            self.import_radar_data()
+        if self.radar_adc_folder:
+            self.import_radar_adc_data()
+        if self.radar_pc_folder:
+            self.import_radar_point_cloud_data()
+        if self.lidar_folder:
+            self.import_lidar_data()
+        if self.camera_folder:
+            self.import_camera_data()
+        if self.hand_tracking_folder:
+            self.import_hand_tracking_data()
+        if self.leap_motion_image_left_folder or self.leap_motion_image_right_folder:
+            self.import_leap_motion_image_data()
+        if self.imu_orientation_folder:
+            self.import_imu_orientation_data()
+        if self.imu_full_folder:
+            self.import_imu_full_data()  
+        if self.vehicle_vel_folder:
+            self.import_vehicle_vel_data()
+        if self.vehicle_odom_folder:
+            self.import_vehicle_odom_data()
             
     def determine_num_frames(self):
 
@@ -179,6 +210,10 @@ class CpslDS:
 
         if self.radar_enabled:
             self.set_num_frames(len(self.radar_files))
+        if self.radar_adc_enabled:
+            self.set_num_frames(len(self.radar_adc_files))
+        if self.radar_pc_enabled:
+            self.set_num_frames(len(self.radar_pc_files))
         if self.lidar_enabled:
             self.set_num_frames(len(self.lidar_files))
         if self.camera_enabled:
@@ -211,6 +246,11 @@ class CpslDS:
     #handling radar data
     ####################################################################   
     def import_radar_data(self):
+        warnings.warn(
+            "import_radar_data is deprecated. Use import_radar_adc_data and import_radar_point_cloud_data instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
         path = os.path.join(self.dataset_path,self.radar_folder)
 
@@ -224,6 +264,12 @@ class CpslDS:
         return
     
     def get_radar_data(self,idx:int)->np.ndarray:
+        warnings.warn(
+            "get_radar_data is deprecated. Use get_radar_adc_data and get_radar_point_cloud instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         """Get radar detections or ADC data cube for a specific index in the dataset.
         The format of the returned data depends on whether the raw ADC data or the processed point cloud is available.
         The radar point cloud data is stored in the base frame of a robot (i.e. it may not be in the radar's coordinate frame)
@@ -251,8 +297,75 @@ class CpslDS:
             self.radar_folder,
             self.radar_files[idx])
         
-        points = np.load(path)
+        data = np.load(path)
                 
+        return data
+
+    def import_radar_adc_data(self):
+
+        path = os.path.join(self.dataset_path,self.radar_adc_folder)
+
+        if os.path.isdir(path):
+            self.radar_adc_enabled = True
+            self.radar_adc_files = sorted(os.listdir(path))
+            print("found {} radar ADC samples".format(len(self.radar_adc_files)))
+        else:
+            print("did not find radar ADC samples")
+
+        return
+
+    def get_radar_adc_data(self, idx: int) -> np.ndarray:
+        """Retrieve the raw ADC cube for a radar frame.
+
+        Args:
+            idx (int): The index of the radar ADC data frame.
+
+        Returns:
+            np.ndarray: A complex-valued numpy array with shape (rx_channels, samples, chirps) and dtype complex64.
+        """
+        assert self.radar_adc_enabled, "No radar ADC dataset loaded"
+
+        path = os.path.join(
+            self.dataset_path,
+            self.radar_adc_folder,
+            self.radar_adc_files[idx])
+
+        adc_cube = np.load(path)
+
+        return adc_cube
+
+    def import_radar_point_cloud_data(self):
+
+        path = os.path.join(self.dataset_path,self.radar_pc_folder)
+
+        if os.path.isdir(path):
+            self.radar_pc_enabled = True
+            self.radar_pc_files = sorted(os.listdir(path))
+            print("found {} radar point cloud samples".format(len(self.radar_pc_files)))
+        else:
+            print("did not find radar point cloud samples")
+
+        return
+
+    def get_radar_point_cloud(self, idx: int) -> np.ndarray:
+        """Retrieve the radar point cloud for the requested index.
+
+        Args:
+            idx (int): The index of the radar point cloud data.
+
+        Returns:
+            np.ndarray: An (N, 4) numpy array where each row is [x, y, z, velocity],
+                expressed in meters and m/s in the base frame.
+        """
+        assert self.radar_pc_enabled, "No radar point cloud dataset loaded"
+
+        path = os.path.join(
+            self.dataset_path,
+            self.radar_pc_folder,
+            self.radar_pc_files[idx])
+
+        points = np.load(path)
+
         return points
     
     ####################################################################
