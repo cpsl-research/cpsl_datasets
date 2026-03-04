@@ -128,6 +128,7 @@ When initializing, you can also specify the names of the folders for each sensor
 | `imu_full_folder` | The name of the folder containing the full IMU data. | `"imu_full"` |
 | `vehicle_vel_folder` | The name of the folder containing the vehicle velocity data. | `"vehicle_vel"` |
 | `vehicle_odom_folder` | The name of the folder containing the vehicle odometry data. | `"vehicle_odom"` |
+| `vicon_folder` | The name of the folder containing the Vicon data. | `""` |
 
 ### Accessing Sensor Data
 
@@ -160,6 +161,9 @@ Once the `CpslDS` object is created, you can access the data for each sensor usi
     -   `get_vehicle_vel_data(idx)`: Returns a `(N, 3)` numpy array with vehicle velocity data `[time, vx, wz]`.
     -   `get_vehicle_odom_data(idx)`: Returns a `(N, 14)` numpy array with the full vehicle odometry data `[time, x, y, z, quat_w, quat_x, quat_y, quat_z, vx, vy, vz, wx, wy, wz]`.
         - Note that velocity data is in the vehicle's coordinate frame, not the global coordinate frame.
+
+-   **Vicon Data**:
+    -   `get_vicon_data(idx)`: Returns a `(N, 7)` numpy array with the Vicon data `[t_x, t_y, t_z, r_w, r_x, r_y, r_z]` where `t` is translation and `r` is quaternion rotation.
 
 You can get the total number of frames in the dataset using the `num_frames` attribute:
 

@@ -25,8 +25,8 @@ class CpslDS:
                  imu_orientation_folder="",
                  imu_full_folder="",
                  vehicle_vel_folder="",
-                 vehicle_odom_folder=""
-
+                 vehicle_odom_folder="",
+                 vicon_folder=""
                  ) -> None:
         """Initializes the CpslDS class.
 
@@ -48,6 +48,7 @@ class CpslDS:
             imu_full_folder (str): The name of the folder containing the full IMU data. Defaults to "".
             vehicle_vel_folder (str): The name of the folder containing the vehicle velocity data. Defaults to "".
             vehicle_odom_folder (str): The name of the folder containing the vehicle odometry data. Defaults to "".
+            vicon_folder (str): The name of the folder containing the Vicon data. Defaults to "".
 
         Sensor Data Format:
             - Radar:
@@ -70,6 +71,8 @@ class CpslDS:
             - Vehicle:
                 - Velocity: (N, 3) numpy array with [time, vx, wz]
                 - Odometry: (N, 14) numpy array with [time, x, y, z, quat_w, quat_x, quat_y, quat_z, vx, vy, vz, wx, wy, wz]
+            - Vicon:
+                - Data: (N, 7) numpy array with [t_x, t_y, t_z, r_w, r_x, r_y, r_z] where t is translation and r is quaternion rotation
         """
         
       
@@ -129,6 +132,11 @@ class CpslDS:
         self.vehicle_odom_folder = vehicle_odom_folder
         self.vehicle_odom_files = []
         self.vehicle_odom_enabled = False
+
+        #vicon data
+        self.vicon_folder = vicon_folder
+        self.vicon_files = []
+        self.vicon_enabled = False
 
         #variable to keep track of the number of frames
         self.num_frames = 0
@@ -203,6 +211,8 @@ class CpslDS:
             self.import_vehicle_vel_data()
         if self.vehicle_odom_folder:
             self.import_vehicle_odom_data()
+        if self.vicon_folder:
+            self.import_vicon_data()
             
     def determine_num_frames(self):
 
@@ -228,6 +238,10 @@ class CpslDS:
             self.set_num_frames(len(self.imu_orientation_files))
         if self.vehicle_vel_enabled:
             self.set_num_frames(len(self.vehicle_vel_files))
+        if self.vehicle_odom_enabled:
+            self.set_num_frames(len(self.vehicle_odom_files))
+        if self.vicon_enabled:
+            self.set_num_frames(len(self.vicon_files))
         
         return
     
@@ -761,5 +775,50 @@ class CpslDS:
             self.dataset_path,
             self.vehicle_odom_folder,
             self.vehicle_odom_files[idx])
+
+        return np.load(path)
+
+    ####################################################################
+    #handling vicon data
+    ####################################################################
+    def import_vicon_data(self):
+
+        path = os.path.join(self.dataset_path,self.vicon_folder)
+
+        if os.path.isdir(path):
+            self.vicon_enabled = True
+            self.vicon_files = sorted(os.listdir(path))
+            print("found {} vicon samples".format(len(self.vicon_files)))
+        else:
+            print("did not find vicon samples")
+
+        return
+    
+    def get_vicon_data(self,idx=0):
+        """Get the vicon data from the dataset.
+
+        The format of the returned data is a numpy array of shape (N, 7), where N is the number of measurements. The columns are:
+            - t_x (float): translation x in meters
+            - t_y (float): translation y in meters
+            - t_z (float): translation z in meters
+            - r_w (float): w component of the rotation quaternion
+            - r_x (float): x component of the rotation quaternion
+            - r_y (float): y component of the rotation quaternion
+            - r_z (float): z component of the rotation quaternion
+
+        Args:
+            idx (int, optional): The index of the vicon data. Defaults to 0.
+
+        Returns:
+            np.ndarray: [t_x, t_y, t_z, r_w, r_x, r_y, r_z]
+        """
+
+        assert self.vicon_enabled, "No Vicon dataset loaded"
+
+        #load the data sample
+        path = os.path.join(
+            self.dataset_path,
+            self.vicon_folder,
+            self.vicon_files[idx])
 
         return np.load(path)
