@@ -161,6 +161,7 @@ Once the `CpslDS` object is created, you can access the data for each sensor usi
     -   `get_vehicle_vel_data(idx)`: Returns a `(N, 3)` numpy array with vehicle velocity data `[time, vx, wz]`.
     -   `get_vehicle_odom_data(idx)`: Returns a `(N, 14)` numpy array with the full vehicle odometry data `[time, x, y, z, quat_w, quat_x, quat_y, quat_z, vx, vy, vz, wx, wy, wz]`.
         - Note that velocity data is in the vehicle's coordinate frame, not the global coordinate frame.
+        - **Coordinate Format Expectation**: Note that on UAV platforms, the x,y,z translation vectors naturally map to an FLU (Forward, Left, Up) coordinate framework. However, the orientation might be structured along NED (North, East, Down) axes natively. Thus if observing orientation directly in an FLU worldview, it will display inappropriately. You can use the `odom_frame=OdomCoordinateFrame.NED` argument when initializing test benches to execute a 180-degree mathematical conversion over the X-axis for quaternions while inverting Y and Z axes to map the coordinates effectively to your FLU-configured sensors.
 
 -   **Vicon Data**:
     -   `get_vicon_data(idx)`: Returns a `(N, 7)` numpy array with the Vicon data `[t_x, t_y, t_z, r_w, r_x, r_y, r_z]` where `t` is translation and `r` is quaternion rotation.
