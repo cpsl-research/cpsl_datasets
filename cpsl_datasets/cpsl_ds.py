@@ -1,3 +1,5 @@
+from multiprocessing.sharedctypes import Value
+from numpy import shape
 import os
 import numpy as np
 import matplotlib.image as img #not needed for ROS
@@ -311,9 +313,11 @@ class CpslDS:
             self.radar_folder,
             self.radar_files[idx])
         
-        data = np.load(path)
-                
-        return data
+        try:
+            data = np.load(path)
+            return data
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 4))
 
     def import_radar_adc_data(self):
 
@@ -344,9 +348,11 @@ class CpslDS:
             self.radar_adc_folder,
             self.radar_adc_files[idx])
 
-        adc_cube = np.load(path)
-
-        return adc_cube
+        try:
+            adc_cube = np.load(path)
+            return adc_cube
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 0, 0), dtype=np.complex64)
 
     def import_radar_point_cloud_data(self):
 
@@ -378,9 +384,11 @@ class CpslDS:
             self.radar_pc_folder,
             self.radar_pc_files[idx])
 
-        points = np.load(path)
-
-        return points
+        try:
+            points = np.load(path)
+            return points
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 4))
     
     ####################################################################
     #handling lidar data
@@ -413,15 +421,20 @@ class CpslDS:
             self.lidar_folder,
             self.lidar_files[idx]
         )
+        try:
+            points = np.load(path)
+
+            valid_points = points[:,2] > -0.2 #filter out ground
+            valid_points = valid_points & (points[:,2] < 0.1) #higher elevation points
+
+            points = points[valid_points,:2]
+
+            return points
+    
+        except (ValueError,EOFError):
+            return np.empty(shape=(0,2))
+
         
-        points = np.load(path)
-
-        valid_points = points[:,2] > -0.2 #filter out ground
-        valid_points = valid_points & (points[:,2] < 0.1) #higher elevation points
-
-        points = points[valid_points,:2]
-
-        return points
     
     def get_lidar_point_cloud_raw(self,idx)->np.ndarray:
         """Get a lidar pointcloud from the desired frame, without filtering anything out.
@@ -444,10 +457,11 @@ class CpslDS:
             self.lidar_files[idx]
         )
         
-        
-        points = np.load(path)
-
-        return points
+        try:
+            points = np.load(path)
+            return points
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 4))
         
     ####################################################################
     #handling camera data
@@ -530,9 +544,12 @@ class CpslDS:
             self.hand_tracking_folder,
             self.hand_tracking_files[idx]
         )
-        data = np.load(path)
-
-        return data
+        
+        try:
+            data = np.load(path)
+            return data
+        except (ValueError,EOFError):
+            return np.zeros(shape=(21, 3))
     
     ####################################################################
     #handling leap_motion data
@@ -630,16 +647,19 @@ class CpslDS:
             self.imu_orientation_files[idx]
         )
 
-        data = np.load(path)
-        w = data[0]
-        x = data[1]
-        y = data[2]
-        z = data[3]
+        try:
+            data = np.load(path)
+            w = data[0]
+            x = data[1]
+            y = data[2]
+            z = data[3]
 
-        heading = np.arctan2(
-            2 * (w * z + x * y), 1 - 2 * (y * y + z * z)
-        )
-        return heading
+            heading = np.arctan2(
+                2 * (w * z + x * y), 1 - 2 * (y * y + z * z)
+            )
+            return heading
+        except (ValueError,EOFError):
+            return np.nan
     
     ####################################################################
     #handling imu (full sensor) data
@@ -683,7 +703,10 @@ class CpslDS:
             self.imu_full_folder,
             self.imu_full_files[idx])
 
-        return np.load(path)
+        try:
+            return np.load(path)
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 7))
     
     ####################################################################
     #handling vehicle velocity data
@@ -718,13 +741,15 @@ class CpslDS:
 
         assert self.vehicle_vel_files, "No Vehicle velocity dataset loaded"
 
-        #load the data sample
         path = os.path.join(
             self.dataset_path,
             self.vehicle_vel_folder,
             self.vehicle_vel_files[idx])
 
-        return np.load(path)
+        try:
+            return np.load(path)
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 3))
     
     ####################################################################
     #handling vehicle odometry data
@@ -776,7 +801,10 @@ class CpslDS:
             self.vehicle_odom_folder,
             self.vehicle_odom_files[idx])
 
-        return np.load(path)
+        try:
+            return np.load(path)
+        except (ValueError,EOFError):
+            return np.empty(shape=(0,14))
 
     ####################################################################
     #handling vicon data
@@ -815,10 +843,12 @@ class CpslDS:
 
         assert self.vicon_enabled, "No Vicon dataset loaded"
 
-        #load the data sample
         path = os.path.join(
             self.dataset_path,
             self.vicon_folder,
             self.vicon_files[idx])
 
-        return np.load(path)
+        try:
+            return np.load(path)
+        except (ValueError,EOFError):
+            return np.empty(shape=(0, 7))
