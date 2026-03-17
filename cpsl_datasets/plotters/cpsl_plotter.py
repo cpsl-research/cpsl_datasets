@@ -96,7 +96,7 @@ class CpslPlotter:
             show (bool, optional): _description_. Defaults to False.
         """
         #get the x,y coordinates to plot
-        radar_data = self.dataset.get_radar_data(idx=sample_idx)[:,0:3]
+        radar_data = self.dataset.get_radar_point_cloud(idx=sample_idx)[:,0:3]
 
         #rotate the points suth that they can be plotted in FLU reference frame
         rotation = Orientation.from_euler(

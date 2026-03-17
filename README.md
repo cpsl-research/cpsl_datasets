@@ -19,9 +19,9 @@ sudo add-apt-repository ppa:deadsnakes/ppa
 sudo apt update
 ```
 
-3. Install python 3.10 along with the required development dependencies
+3. Install python 3.12 along with the required development dependencies
 ```
-sudo apt install python3.10 python3.10-dev
+sudo apt install python3.12 python3.12-dev
 ```
 
 The following resources may be helpful [Deadsnakes PPA description](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa), [Tutorial on Deadsnakes on Ubuntu](https://preocts.github.io/python/20221230-deadsnakes/)
@@ -57,12 +57,11 @@ git submodule update --init
 1. Check to see if Python Poetry is installed. If the below command is successful, poetry is installed move on to setting up the conda environment
 
 ```
-    #for now ensure that it is lower than version 2.0 (TOML files are out of date)
     poetry --version
 ```
 2. If Python Poetry is not installed, follow the [Poetry Install Instructions](https://python-poetry.org/docs/#installing-with-the-official-installer). On linux, Poetry can be installed using the following command:
 ```
-curl -sSL https://install.python-poetry.org | python3 - --version 1.8.4
+curl -sSL https://install.python-poetry.org | python3
 ```
 
 If you are using poetry over an ssh connection or get an error in the following steps, try running the following command first and then continuing with the remainder fo the installation.
