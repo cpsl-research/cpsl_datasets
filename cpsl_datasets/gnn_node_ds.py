@@ -1,137 +1,94 @@
 import os
 import numpy as np
-import matplotlib.image as img #not needed for ROS
 
-class GnnNodeDS:
+from cpsl_datasets._base_training_ds import _BaseTrainingDS
+
+class GnnNodeDS(_BaseTrainingDS):
+    """Dataset class for handling node and label data for GNNs."""
 
     def __init__(self,
-                 dataset_path,
-                 node_folder="nodes",
-                 label_folder="labels",
+                 dataset_path: str,
+                 node_folder: str = "nodes",
+                 label_folder: str = "labels",
                  ) -> None:
-        
-
-        #node folder
-        self.nodes_enabled = False
-        self.node_folder = node_folder
-        self.node_files = []
-
-        #labels folder
-        self.labels_enabled = False
-        self.label_folder = label_folder
-        self.label_files = []
-
-        #variable to keep track of the number of frames
-        self.num_frames = 0
-
-        #load the new dataset
-        self.load_new_dataset(dataset_path)
-
-        return
-
-    def load_new_dataset(self,dataset_path:str):
-
-        self.dataset_path = dataset_path
-        self.import_dataset_files()
-        self.determine_num_frames()
-
-    def import_dataset_files(self):
-
-        self.import_node_data()
-        self.import_label_data()
-            
-    def determine_num_frames(self):
-
-        self.num_frames = 0
-
-        if self.nodes_enabled:
-            self.set_num_frames(len(self.node_files))
-        if self.labels_enabled:
-            self.set_num_frames(len(self.label_files))     
-        return
-    
-    def set_num_frames(self,num_files:int):
-        """Update the number of frames available in the dataset
+        """Initialize the node dataset.
 
         Args:
-            num_files (int): The number of files available for a given sensor
+            dataset_path (str): Path to the dataset directory.
+            node_folder (str): Name of the folder containing node data.
+            label_folder (str): Name of the folder containing label data.
         """
-        if self.num_frames > 0:
-            self.num_frames = min(self.num_frames,num_files)
-        else:
-            self.num_frames = num_files
-    
-    ####################################################################
-    #handling node data
-    ####################################################################   
-    def import_node_data(self):
+        super().__init__(
+            dataset_path=dataset_path,
+            input_folder=node_folder,
+            label_folder=label_folder
+        )
 
-        path = os.path.join(self.dataset_path,self.node_folder)
-
-        if os.path.isdir(path):
-            self.node_files = sorted(os.listdir(path))
-            self.nodes_enabled = True
-            print("found {} node samples".format(len(self.node_files)))
-        else:
-            print("did not find node samples")
-
-        return
-      
-    def get_node_data(self,idx:int)->np.ndarray:
-        """Get save node samples
-
-        Args:
-            idx (int): The index of the node data sample
+    @property
+    def node_folder(self) -> str:
+        """Get the node folder name.
 
         Returns:
-            np.ndarray: NxM array of N nodes with M properties per Node
+            str: The node folder name.
         """
+        return self.input_folder
 
-        assert self.nodes_enabled, "No nodes dataset loaded"
-
-        path = os.path.join(
-            self.dataset_path,
-            self.node_folder,
-            self.node_files[idx])
-        
-        nodes = np.load(path)
-                
-        return nodes
-    
-    ####################################################################
-    #handling label data
-    ####################################################################   
-    def import_label_data(self):
-
-        path = os.path.join(self.dataset_path,self.label_folder)
-
-        if os.path.isdir(path):
-            self.label_files = sorted(os.listdir(path))
-            self.labels_enabled = True
-            print("found {} label samples".format(len(self.label_files)))
-        else:
-            print("did not find label samples")
-
-        return
-      
-    def get_label_data(self,idx:int)->np.ndarray:
-        """Get saved label samples
+    @node_folder.setter
+    def node_folder(self, value: str) -> None:
+        """Set the node folder name.
 
         Args:
-            idx (int): The index of the label data sample
+            value (str): The new node folder name.
+        """
+        self.input_folder = value
+
+    @property
+    def nodes_enabled(self) -> bool:
+        """Check if node data is enabled.
 
         Returns:
-            np.ndarray: N-element array of N nodes where 1 indicates the node
-                valid and 0 indicates the node is invalid
+            bool: True if nodes are enabled, False otherwise.
         """
+        return self.inputs_enabled
 
-        assert self.labels_enabled, "No labels dataset loaded"
+    @nodes_enabled.setter
+    def nodes_enabled(self, value: bool) -> None:
+        """Set nodes enabled flag.
 
-        path = os.path.join(
-            self.dataset_path,
-            self.label_folder,
-            self.label_files[idx])
-        
-        nodes = np.load(path)
-                
-        return nodes
+        Args:
+            value (bool): True if nodes are enabled, False otherwise.
+        """
+        self.inputs_enabled = value
+
+    @property
+    def node_files(self) -> list:
+        """Get the list of node files.
+
+        Returns:
+            list: List of node file names.
+        """
+        return self.input_files
+
+    @node_files.setter
+    def node_files(self, value: list) -> None:
+        """Set the list of node files.
+
+        Args:
+            value (list): List of node file names.
+        """
+        self.input_files = value
+
+    def import_node_data(self) -> None:
+        """Import node files from the dataset folder."""
+        self.import_input_data()
+
+    def get_node_data(self, idx: int) -> np.ndarray:
+        """Get saved node samples.
+
+        Args:
+            idx (int): The index of the node data sample.
+
+        Returns:
+            np.ndarray: NxM array of N nodes with M properties per Node.
+        """
+        return self.get_input_data(idx)
