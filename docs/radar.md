@@ -5,16 +5,14 @@
 > stored. No range FFT, Doppler, CFAR, calibration or beamforming. Signal processing lives in
 > [CPSL_TI_Radar](https://github.com/davidmhunt/CPSL_TI_Radar) (which includes `radar_gui`).
 
-Open a file as in [index.md](index.md). Real-file numbers below come from one sensor
-(`radar06`).
+Open a file as in [index.md](index.md). Real-file numbers below are from `radar06`.
 
 ## ADC cube
 
 Stored: an `ADCDataCube` stream. `data` is `int16`, `(N, 2, rx, sample, chirp)`; the `2` is
 real and imaginary. `get_radar_adc_data(idx)` returns `complex64` `(rx, sample, chirp)`: the raw
 `int16` ADC counts, with no scaling, volts or windowing. Cube sizes differ per file (`radar06`:
-`(1, 3300, 255)`; converted files: `(4, 70, 120)`, `(4, 63, 300)`). The group's `axes` attribute
-gives the stored axis order.
+`(1, 3300, 255)`; converted files: `(4, 70, 120)`, `(4, 63, 300)`).
 
 ```mermaid
 flowchart LR
@@ -116,7 +114,7 @@ On `radar06` the radar's recv stamp is later than its header stamp by a large, j
 | `radar_adc` | 112.1 ms | 4.9 ms | 104.8 ms | 126.3 ms |
 | `adc_meta` | 104.4 ms | 1.5 ms | 102.7 ms | 108.4 ms |
 
-With `clock="header"` radar frames line up ~100 ms earlier against recv-stamped streams.
+With `clock="header"` radar frames line up earlier against recv-stamped streams by that offset (about 3 ms on current rover captures, below).
 
 ```python
 # synth: v4
@@ -133,8 +131,7 @@ print(ds.get_stamps("radar_adc")[:3])                      # int64 ns, chosen cl
 *Figure 4. Schematic: header and recv stamps of a radar, an odometry stream on recv stamps,
 the reference stamp and the odometry window. Spacing is illustrative.*
 
-**Worked example: a rover capture (`all`).** Frame `idx` is the idx-th radar cube; switch the
-clock, matching and reference as in [index.md](index.md#open-it). One rover recording holds `radar_adc` (101 cubes,
+**Worked example: a rover capture (`all`).** Frame `idx` is the idx-th radar cube. One rover recording holds `radar_adc` (101 cubes,
 4 Hz), `adc_meta`, `odometry` (15 Hz) and the tracked `odom` to `base_link` edge. On the
 default recv clock `adc_meta` arrives about 3 ms *after* its cube, so it is not yet "at or
 before" the cube's stamp: for 62 of the 101 frames `ds.match("chirp_meta", i)` serves the
@@ -157,10 +154,8 @@ for clock in ("recv", "header"):
 ```
 
 **Deprecated.** `get_radar_data(idx)` is the v1 getter (point cloud if one is bound, else the
-cube) and warns; use `get_radar_adc_data` or `get_radar_point_cloud`. Outside the notebook,
-name streams as keyword arguments (`radar_pc="radar_pc_1"`). `CPSL_STREAMS` (a JSON role to
-stream map) is read only by `notebooks/dataset_viewer.ipynb`; in your own script use
-`CpslDS(path, **json.loads(os.getenv("CPSL_STREAMS", "{}")))`.
+cube) and warns; use `get_radar_adc_data` or `get_radar_point_cloud`. `CPSL_STREAMS` (a JSON role to
+stream map) is read only by `notebooks/dataset_viewer.ipynb`; elsewhere name streams as keyword arguments.
 
 ## Appendix: radar `metrics` keys and chirp-meta keys
 

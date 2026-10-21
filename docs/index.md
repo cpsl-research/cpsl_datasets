@@ -4,9 +4,8 @@ Three pages: this one, [streams.md](streams.md) (every non-radar stream; its
 [appendix](streams.md#appendix-every-role-getter-and-return) lists every role with getter,
 shape and stamp rule) and [radar.md](radar.md). Snippets run as written once `capture.h5` is your
 file; the `# synth:` comment names the synthetic capture they are tested against. Stream names
-are those of a console capture; your file's are in `ds.roles` or `inspect`. Use `uv run` for
-everything (see the [README](../README.md), which also shows how to
-[build the API reference](../README.md#api-reference)).
+are those of a console capture; your file's are in `ds.roles` or `inspect`. See the
+[README](../README.md) for `uv run` and the [API reference](../README.md#api-reference).
 
 ## First five minutes
 
@@ -18,7 +17,7 @@ uv run python -m cpsl_datasets.inspect capture.h5 --validate
 # synth: all
 from cpsl_datasets import CpslDS
 
-with CpslDS("capture.h5") as ds:      # several streams of one type? name one: radar_adc="..."
+with CpslDS("capture.h5") as ds:      # several radars? pass stream names, e.g. radar_adc="<stream>"
     print(ds)                         # file, frames, bound roles
     cube = ds.get_radar_adc_data(0)   # complex64, raw ADC counts (no scaling)
     m = ds.match("vehicle_odom", 0)   # which odometry sample frame 0 got, and its dt
@@ -26,14 +25,15 @@ with CpslDS("capture.h5") as ds:      # several streams of one type? name one: r
     print(cube.shape, m.dt_ns / 1e6, odom.shape)
 ```
 
-Example files: v1 conversions are in `~/Documents/cpsl_datasets_data/v1_converted/`; captures
-made with the console are in the console repo's `data/datasets/`.
+Example files: `~/Documents/cpsl_datasets_data/v1_converted/` (v1 conversions) and the console
+repo's `data/datasets/` (console captures).
 
 **Roles.** A *role* is the reader's fixed name for a kind of data; each getter reads one role
 (`get_radar_adc_data` reads `radar_adc`, `get_vehicle_odom_data` reads `vehicle_odom`,
 `get_chirp_meta` reads `chirp_meta`). A *stream* is whatever the recorder named it in the file.
 `ds.roles` maps role to stream, filled automatically by message type; override it with a
-keyword such as `radar_pc="radar_1_pc"`. One stream can fill two roles. On a rover capture:
+keyword taking a stream name, such as `radar_pc="radar_1_pc"` (whereas `reference=` takes a
+role name). One stream can fill two roles. On a rover capture:
 
 ```
 ds.roles     = {'radar_adc': 'radar_adc', 'vehicle_odom': 'odometry',
@@ -42,8 +42,7 @@ len(ds) = 101, ds.reference = 'radar_adc'
 ```
 
 `ds.reference` is the role whose samples define the **frames**: `len(ds)` and `idx` count its
-samples (here, 101 radar cubes) and every other role is matched to frame `idx`. Choose it with
-`reference=`.
+samples (here, 101 radar cubes) and every other role is matched to frame `idx`.
 
 ## What a dataset is
 
@@ -51,7 +50,7 @@ One `.h5` file in the `cpsl_dataset_hdf5` format, written by the Sensors repo's
 `dataset_recorder` (or converted from an old folder of `.npy` files, see the README). Each
 recorded ROS topic is a **stream**: an HDF5 group holding the samples (`data`), two time stamps
 per sample (`stamp_recv_ns`, `stamp_header_ns`) and attributes (`msg_type`, `frame_id`, ...).
-Point clouds are stored ragged. Format version 4 files also carry `/tf_static` and tracked `/tf`.
+Version 4 files also carry `/tf_static` and tracked `/tf`.
 
 ```mermaid
 flowchart LR
@@ -68,28 +67,25 @@ flowchart LR
 
 ## Look before you open
 
-The `inspect` command above prints the format, version and `closed_cleanly`, a table of streams
-(name, type, samples, frame id, time span), a recv-versus-header clock report, and the static
-and tracked transforms. `--validate` adds structural checks and prints `validate: no problems`
-when the file is sound. "header stamps are -1 (no header): use recv" means the file has no
+`inspect` prints the format, version and `closed_cleanly`, a table of streams (name, type,
+samples, frame id, time span), a recv-versus-header clock report and the transforms. `--validate`
+adds structural checks and prints `validate: no problems` when the file is sound. "header stamps are -1 (no header): use recv" means the file has no
 usable header stamps (every converted v1 file, see [radar.md](radar.md)).
 
 ## Open it
 
 The default reference is the first non-empty of radar_adc, radar_pc, lidar, camera; every other
-getter returns that role's newest sample at or before the reference sample's stamp.
+getter returns that role's newest sample at or before the reference sample's stamp, however old:
+across a gap it is stale with no warning (`match(...).dt_ns` shows the age; `interp` gives NaN).
 
 ```python
 # synth: v4
 from cpsl_datasets import CpslDS
 
 with CpslDS("capture.h5") as ds:
-    print(ds)                          # file, frames, bound roles
     print(len(ds), ds.reference)       # number of frames, reference role
     print(ds.roles)                    # role -> stream name actually bound
     print(list(ds.capture.streams()))  # every stream in the file
-    cube = ds.get_radar_adc_data(0)    # complex64, (rx, sample, chirp)
-    print(cube.shape, cube.dtype)
 ```
 
 If several streams match one role, construction raises `ValueError` naming the matches
@@ -118,8 +114,8 @@ print(ds.get_vehicle_odom_data(2).shape)   # sample 2 of the odometry stream its
 ```
 
 Early frames can be empty: a stream whose first sample arrived after the reference stamp
-returns an empty array (`(0, 4)`, `(0, 0)`, `nan` for yaw). Test the size before indexing. **Getters read from the HDF5 file on every call**, so `np.stack` over every frame
-loads the whole stream into memory; loop and reduce, or slice the stream itself.
+returns an empty array (`(0, 4)`, `(0, 0)`, `nan` for yaw). Test the size first. **Getters read from the HDF5 file on every call**, so `np.stack` over every frame
+loads the whole stream into memory; loop and reduce.
 
 **Choosing the reference.** To align to something other than the default, say so:
 
@@ -134,10 +130,11 @@ print(len(ds), ds.reference)        # frames are now odometry samples
 
 - `reference="lidar"` (any bound role): which role counts the frames.
 - `match="previous"` (default) serves the newest sample at or before the reference stamp;
-  `"nearest"` the closest either side (ties go to the earlier). Windowed streams are unchanged.
+  `"nearest"` the closest either side. Ties: among equal sample stamps `previous` takes the
+  later row; a sample equidistant either side goes to the earlier. Windowed streams are unchanged.
 - `clock="recv"` (default) aligns on the recording host's receive stamp; `"header"` uses the
-  message stamp and raises if any bound stream has none (add `tf_message=False`). Native console
-  captures only: converted v1 files have no header stamps (-1) and raise. The two
+  message stamp and raises if any bound stream has none (a recorded `/tf` message
+  stream may lack one: `tf_message=False` leaves it unbound). Converted v1 files (header -1) always raise. The two
   differ by about 100 ms on `radar06` and about 3 ms on a rover capture ([radar.md](radar.md)).
 
 ## Capture modes
@@ -170,7 +167,7 @@ time instead of frame:
 | `at_time(role, t_ns, method="previous", tol_ns=None)` | `Match` at that time; `Match(-1, None, None)` if none |
 | `window(role, t0_ns, t1_ns)` | raw indices with `t0 < stamp <= t1` |
 | `read(role, j)` | what the role's getter returns for raw sample `j` |
-| `interp(role, t_ns, max_gap_ns=None)` | odometry, vel, IMU, Vector3, Vicon, linearly (quaternion: slerp) |
+| `interp(role, t_ns, max_gap_ns=None)` | odometry, vel, IMU, Vector3, Vicon, linearly (quaternion: slerp); no time column; scalar `t_ns` gives `(k,)`, an array `(n, k)` (odometry `k` = 13, columns `x y z qx qy qz qw vx vy vz wx wy wz`) |
 
 **The -1 trap.** `j = -1` means "no sample yet". Indexing with it would silently return the last
 sample, so `read(role, -1)` raises `IndexError`: check `Match.j` first. `interp` returns **NaN**
@@ -187,9 +184,10 @@ m = ds.match("chirp_meta", 2)
 if m.j >= 0:
     meta = ds.read("chirp_meta", m.j)           # the meta served for frame 2
     print(m.j, m.dt_ns / 1e6, "ms")
-t = ds.get_stamps("radar_adc")                  # int64 ns
-pose = ds.interp("vehicle_odom", t)             # (n, 13); NaN where there is no data
-print(np.isnan(pose).any(axis=1).sum(), "frames without a pose")
+t = ds.get_stamps("radar_adc")                  # int64 ns, one per radar frame
+cube = ds.get_radar_adc_data(5)                 # radar frame 5 ...
+pose = ds.interp("vehicle_odom", t[5])          # ... and the pose at its time: (13,), NaN if none
+print(cube.shape, pose[:3], np.isnan(pose).any())   # pose[:3] is x y z
 print(ds.window("vehicle_odom", t[0], t[1]))    # odometry samples between two frames
 ```
 

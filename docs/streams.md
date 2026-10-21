@@ -10,7 +10,7 @@ a file in [index.md](index.md).
 - Two kinds of getter. **Newest-sample** getters (cameras, point clouds, `camera_info`) return
   the newest sample at or before the reference stamp. **Windowed** getters (odometry, velocity,
   IMU, Vector3, Vicon) return every row with a stamp in `(t_ref[idx-1], t_ref[idx]]`, so
-  stacking all frames reproduces the stream once. Ties on newest-sample getters go to the later row.
+  stacking all frames reproduces the stream once.
 - An empty result (no sample yet) is `(0, ...)`-shaped, never `None`, except `get_camera_info`.
 - Time is the chosen clock in seconds (the `t` column of windowed getters).
 
@@ -19,8 +19,8 @@ a file in [index.md](index.md).
 Stored: a ragged `PointCloud2` stream with no `vel` column, all columns kept. IcaRAus-style
 captures hold `float32` rows of x y z intensity (an `(19968, 4)` cloud on the converted real
 file). An Ouster cloud has nine fields: x y z intensity t reflectivity ring ambient range.
-**Intensity has no stated unit**: it is stored as the driver published it, and neither this
-package nor the Sensors format spec defines it. Treat it as a relative, sensor-specific value.
+**Intensity has no stated unit**: it is stored as the driver published it; treat it as relative
+and sensor-specific.
 
 ```python
 # synth: getters
@@ -44,8 +44,8 @@ Ouster columns come back through `get_point_cloud_columns`; no real Ouster file 
 
 Stored: `Image` streams. The colour camera keeps the message encoding (`rgb8`, `bgr8`, `rgba8`,
 `bgra8`, `8UC3`), as `uint8`, `(H, W, C)`. The stream named `camera_depth` is `(H, W)`,
-`uint16` (mono16) or `float32` (32FC1). Converted real files are `bgr8`: `(720, 1280, 3)` and
-`(480, 640, 3)`, depth `(480, 848)`.
+`uint16` (mono16) or `float32` (32FC1). Converted real files are `bgr8`: `(720, 1280, 3)`,
+`(480, 640, 3)`; depth `(480, 848)`.
 
 ```python
 # synth: human
@@ -66,7 +66,7 @@ Depth is `ds.get_camera_depth_frame(idx)`. Images are never transformed.
 ## Odometry, velocity and IMU
 
 Stored: `Odometry` rows `x y z qx qy qz qw vx vy vz wx wy wz` (position in metres, quaternion
-**x-first**, v1 was w-first; frame `odom`, child `base_link`); a `Twist` stream for velocity
+**x-first**, v1 was w-first; pose in frame `odom`, twist in child frame `base_link`); a `Twist` stream for velocity
 (without one, the odometry twist is used); `Imu` rows `qx qy qz qw wx wy wz ax ay az`.
 
 | Getter | Returns |
@@ -128,8 +128,8 @@ plt.show()
 
 ## Hands (Leap Motion)
 
-> **Hands are raw Leap-sensor coordinates in metres. They are not in the robot base frame,
-> and neither `frame=` nor `get_transform` moves them.**
+> **Hands are raw Leap-sensor coordinates in metres, not in the robot base frame;
+> neither `frame=` nor `get_transform` moves them.**
 
 Stored: two `PointCloud2` streams, `hand_left` and `hand_right`, 21 points (`x y z`) per
 sample, `frame_id` `cpsl_human_movement/leap_link`. Joint order: palm, then thumb, index,
@@ -151,10 +151,10 @@ plt.scatter(pts[:, 0], pts[:, 1])
 plt.show()
 ```
 
-**v1 hands.** Hands in converted v1 datasets are also raw Leap coordinates, whatever the
-`frame_id` says (older converted files were stamped `base_link`, wrongly). No code was found that
-moved v1 hands to the base frame, but Sensors [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
-(line 172) says they were. Treat v1 hands as raw Leap until someone checks.
+**v1 hands.** Treat hands in converted v1 datasets as raw Leap too, whatever the `frame_id`
+says (older conversions stamped `base_link`, wrongly): Sensors
+[reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
+(line 172) says they were moved to the base frame, but no code was found that does it.
 
 ## Leap images
 
