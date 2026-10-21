@@ -13,6 +13,12 @@ Format and reading semantics are defined in the Sensors repo:
 [hdf5_format.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/blob/main/src/dataset_generator/docs/hdf5_format.md),
 [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/blob/main/src/dataset_generator/docs/reading_datasets.md).
 
+## Documentation
+
+- [User guide](docs/index.md): what a dataset is, `inspect`, opening a file
+- [Streams](docs/streams.md): lidar, camera, odometry, IMU, Vicon, hands, Leap images
+- [Radar](docs/radar.md): raw ADC cube, point cloud, config, chirp metadata, timing
+
 ## Installation
 Requires Python 3.10-3.12 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
