@@ -1,6 +1,6 @@
 [project]
 name = "cpsl_datasets"
-version = "0.1.0"
+version = "2.0.0"
 description = "Access CPSL datasets"
 authors = [{ name = "David Hunt", email = "dmh89@duke.edu" }]
 license = "MIT"

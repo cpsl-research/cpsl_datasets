@@ -1,4 +1,10 @@
 # CPSL Datasets
+
+## What changed in 2.0
+- HDF5 (`cpsl_dataset_hdf5`, `.h5`) replaces the folder-of-`.npy` dataset format.
+- A v1 `.npy` -> HDF5 converter brings old datasets to the new format.
+- Poetry is replaced by uv for environments and dependencies.
+
 Package for reading CPSL datasets. A dataset is one `cpsl_dataset_hdf5` file (`.h5`) written
 by the Sensors repo's `dataset_recorder`. `CpslDS` opens it and returns frames with the v1
 getter names. Old v1 folder datasets are converted to HDF5 first (see below).
@@ -126,8 +132,8 @@ magnitude of the raw cube; it does no radar processing.
 ## v1 datasets and code
 
 The previous folder-based `CpslDS`, its plotter and the v1 recorder are kept in `archive/`
-for reference (not packaged, not tested). The old API as a whole is in git history before
-the HDF5 rewrite. To use old data with the current API, convert it as above.
+for reference (not packaged, not tested). The old API as a whole is on the `v1` branch (tag
+`v1.0`, commit cfdd785), before the HDF5 rewrite. To use old data with the current API, convert it as above.
 
 ## Coordinate frames
 
