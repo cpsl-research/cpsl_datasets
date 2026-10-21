@@ -131,7 +131,7 @@ def build(path, variant="v4"):
                "x y z qx qy qz qw".split(), attrs={"child_frame_id": "tool"})
         b.rows("vec3", "geometry_msgs/msg/Vector3Stamped", n, ["x", "y", "z"])
         ci = rng.normal(size=(n, 46))
-        ci[:, 32 + 12 + 5:] = np.nan  # D NaN-padded
+        ci[:, 37:] = np.nan  # D0..D4 real, rest NaN-padded
         b.stream("cam_info", "sensor_msgs/msg/CameraInfo", n,
                  attrs={"columns": CAMINFO_COLS, "frame_id": "camera",
                         "distortion_model": "plumb_bob"}, fields={"data": ci})
