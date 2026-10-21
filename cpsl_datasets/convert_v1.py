@@ -4,7 +4,9 @@
         [--base-frame FRAME] [--frame-rate HZ] [--compression gzip|lzf] [--force]
 
 The source tree is only ever read. Each folder becomes one stream (attr
-``legacy_folder`` keeps the folder name); folders no pattern knows are printed
+``legacy_folder`` keeps the folder name; stream names follow the Sensors
+recorder configs via ``RENAMES``, e.g. depth -> camera_depth, radar_0_adc ->
+radar_adc, leap_images_left -> leap_left); folders no pattern knows are printed
 and listed in root attr ``v1_skipped_folders``. Folder names vary between
 datasets, so the folder -> type mapping is by name pattern (``PATTERNS``) and
 can be overridden per folder with ``--map folder=type`` (``skip`` drops one).
@@ -15,7 +17,8 @@ Types and conversions (reading_datasets.md section 5):
                   non-integer or out-of-int16-range values abort the run.
 * ``radar_pc``    (n,4) x y z vel, ragged PointCloud2, frame_id = --base-frame.
 * ``lidar``       (n,4) x y z intensity, same.
-* ``hands``       (2,n,3) -> two ragged streams ``<folder>_left/_right``;
+* ``hands``       (2,n,3) -> two ragged streams (folder ``hands`` ->
+                  ``hand_left``/``hand_right``, else ``<folder>_left/_right``);
                   (21,3) -> one stream. x y z, frame_id = --base-frame.
 * ``image``       png (cv2, BGR) or npy -> Image; encoding from dtype/channels.
 * ``imu_orient``  (4,) w x y z -> Imu (N,10), orientation only (rest NaN).
@@ -98,8 +101,26 @@ class Folder:
         self.files = files  # [(frame number, Path)] ascending by number
 
 
+# v1 folder -> stream name the Sensors v2 recorder configs use (so converted
+# and newly captured files read alike). Regexes on the folder name; first hit.
+# Left alone (no recorder convention): radar_1_*/radar_combined_pc, imu_data_full,
+# vehicle_vel, vicon_<segment>, single-hand "hands" (21,3), camera_npy, others.
+RENAMES = [
+    (r"radar_0_(adc|pc)", r"radar_\1"),
+    (r"(front|back|down)_radar_(adc|pc)", r"radar_\1_\2"),
+    (r"imu_data", "imu"),
+    (r"depth", "camera_depth"),
+    (r"leap_images_(left|right)", r"leap_\1"),
+]
+HANDS_SUFFIX = {"hands": ("hand_left", "hand_right")}
+
+
 def stream_name(folder):
     name = folder.replace(".", "_")
+    for pat, rep in RENAMES:
+        if re.fullmatch(pat, name):
+            name = re.sub(pat, rep, name)
+            break
     if name in ("tf", "tf_static"):
         raise ConvertError("folder %r collides with reserved stream name" % folder)
     return name
@@ -321,7 +342,8 @@ def _convert_folder(ctx, f):
 def _convert_hands(ctx, f, sname):
     first = _load(f.files[0][1]) if f.files else np.zeros((21, 3))
     two = first.ndim == 3
-    names = [sname + "_left", sname + "_right"] if two else [sname]
+    names = list(HANDS_SUFFIX.get(sname, (sname + "_left", sname + "_right"))) \
+        if two else [sname]
     for n in names:
         ctx.add(n, f, MSG["cloud"], {"columns": ["x", "y", "z"],
                                      "frame_id": ctx.base_frame})

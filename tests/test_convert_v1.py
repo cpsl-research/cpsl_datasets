@@ -52,7 +52,7 @@ def test_variant_converts_and_validates(tmp_path, variant):
             names = [n for n, s in st.items() if s.attrs["legacy_folder"] == folder]
             assert names, folder
             if folder == "hands":
-                assert sorted(names) == ["hands_left", "hands_right"]
+                assert sorted(names) == ["hand_left", "hand_right"]
             assert all(len(st[n]) == n_exp for n in names), folder
     assert res["skipped"] == []
 
@@ -67,11 +67,11 @@ def test_root_attrs(tmp_path):
         assert [x if isinstance(x, str) else x.decode()
                 for x in a["v1_skipped_folders"]] == ["mystery"]
         assert "node clock" in a["timestamps"]
-        cube = c["radar_0_adc"]
+        cube = c["radar_adc"]
         assert cube.attrs["radar_cfg_status"] == "not_received"
         assert cube.columns == ["real", "imag"]
-        assert (c["radar_0_adc"].stamps("header") == -1).all()
-        assert c["radar_0_pc"].frame_id == "base_link"
+        assert (c["radar_adc"].stamps("header") == -1).all()
+        assert c["radar_pc"].frame_id == "base_link"
 
 
 def test_base_frame_option(tmp_path):
@@ -85,15 +85,16 @@ def test_values_round_trip(tmp_path):
     tr, out, _ = conv(tmp_path)
     with Capture(out) as c:
         for i, a in enumerate(tr.frames["radar_0_adc"]):
-            assert np.array_equal(c["radar_0_adc"].read(i), a)       # exact
-            assert c["radar_0_adc"].read(i, raw=True).dtype == np.int16
-        for f in ("radar_0_pc", "radar_1_pc", "radar_combined_pc", "lidar"):
+            assert np.array_equal(c["radar_adc"].read(i), a)       # exact
+            assert c["radar_adc"].read(i, raw=True).dtype == np.int16
+        for f, sn in (("radar_0_pc", "radar_pc"), ("radar_1_pc", "radar_1_pc"),
+                      ("radar_combined_pc", "radar_combined_pc"), ("lidar", "lidar")):
             for i, a in enumerate(tr.frames[f]):
-                assert np.array_equal(c[f].read(i), a)               # exact, incl. empty
-        assert len(c["radar_0_pc"].read(1)) == 0
+                assert np.array_equal(c[sn].read(i), a)               # exact, incl. empty
+        assert len(c["radar_pc"].read(1)) == 0
         for i, a in enumerate(tr.frames["hands"]):
-            assert np.array_equal(c["hands_left"].read(i), a[0])
-            assert np.array_equal(c["hands_right"].read(i), a[1])
+            assert np.array_equal(c["hand_left"].read(i), a[0])
+            assert np.array_equal(c["hand_right"].read(i), a[1])
         for i, a in enumerate(tr.frames["hand_single"]):
             assert np.array_equal(c["hand_single"].read(i), a)
         # images
@@ -101,11 +102,11 @@ def test_values_round_trip(tmp_path):
             assert np.array_equal(c["camera"].read(i), a)
         assert c["camera"].attrs["encoding"] == "bgr8"
         assert c["camera_npy"].attrs["encoding"] == "bgr8"
-        assert c["depth"].attrs["encoding"] == "mono16"
-        assert np.array_equal(c["depth"].read(2), tr.frames["depth"][2])
+        assert c["camera_depth"].attrs["encoding"] == "mono16"
+        assert np.array_equal(c["camera_depth"].read(2), tr.frames["depth"][2])
         assert c["leap_left"].attrs["encoding"] == "mono8"
         assert c["leap_right"].attrs["encoding"] == "32FC1"
-        assert np.array_equal(c["leap_right"].read(1), tr.frames["leap_right"][1])
+        assert np.array_equal(c["leap_right"].read(1), tr.frames["leap_images_right"][1])
 
 
 def test_reorders_and_row_conversions(tmp_path):
@@ -125,7 +126,7 @@ def test_reorders_and_row_conversions(tmp_path):
         im = np.array([c["imu_data_full"].read(i) for i in range(len(full))])
         assert np.isnan(im[:, :4]).all()
         assert np.array_equal(im[:, 4:], full[:, 1:])
-        q = np.array([c["imu_data"].read(i) for i in range(4)])
+        q = np.array([c["imu"].read(i) for i in range(4)])
         want = np.array(tr.frames["imu_data"])[:, [1, 2, 3, 0]]
         assert np.array_equal(q[:, :4], want) and np.isnan(q[:, 4:]).all()
         for i, a in enumerate(tr.frames["vicon_x500_8"]):
@@ -139,11 +140,11 @@ def test_frame_stamps(tmp_path):
     tr, out, _ = conv(tmp_path)
     with Capture(out) as c:
         last_t = [a[-1, 0] for a in tr.frames["vehicle_odom"]]
-        assert np.array_equal(c["radar_0_pc"].stamps(),
+        assert np.array_equal(c["radar_pc"].stamps(),
                               np.rint(np.array(last_t) * 1e9).astype(np.int64))
     tr, out, _ = conv(tmp_path / "b", build=VARIANTS["no_time_folders"], frame_rate=4.0)
     with Capture(out) as c:
-        assert np.array_equal(c["radar_0_pc"].stamps(),
+        assert np.array_equal(c["radar_pc"].stamps(),
                               (np.arange(4) * 250_000_000).astype(np.int64))
         assert "synthesized" in c.attrs["timestamps"]
 
@@ -177,7 +178,7 @@ def test_map_overrides_pattern(tmp_path):
     tr = build_v1(tmp_path / "v1", include=("pc",))
     res = convert(tr.root, tmp_path / "o.h5", {"radar_0_pc": "lidar"}, log=lambda *_: None)
     with Capture(tmp_path / "o.h5") as c:
-        assert c["radar_0_pc"].columns[-1] == "intensity"
+        assert c["radar_pc"].columns[-1] == "intensity"
         assert c["radar_1_pc"].columns[-1] == "vel"
 
 
@@ -258,9 +259,22 @@ def test_hdf5_to_legacy_round_trip(tmp_path):
     tr, out, _ = conv(tmp_path, build=dict(include=("cube", "pc", "vehicle")))
     back = tmp_path / "back"
     r = subprocess.run([sys.executable, CONVERTER, str(out), str(back),
-                        "--reference", "radar_0_adc"], capture_output=True, text=True)
+                        "--reference", "radar_adc"], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     for folder in ("radar_0_adc", "radar_0_pc"):
         for k, a in enumerate(tr.frames[folder]):
             got = np.load(back / folder / ("frame_%d.npy" % k))
             assert np.array_equal(got, a), (folder, k)
+
+
+def test_stream_names_follow_recorder_configs():
+    from cpsl_datasets.convert_v1 import stream_name
+    want = {"radar_0_adc": "radar_adc", "radar_0_pc": "radar_pc",
+            "front_radar_adc": "radar_front_adc", "down_radar_pc": "radar_down_pc",
+            "depth": "camera_depth", "imu_data": "imu",
+            "leap_images_left": "leap_left", "leap_images_right": "leap_right",
+            "camera": "camera", "lidar": "lidar", "vehicle_odom": "vehicle_odom",
+            "radar_1_pc": "radar_1_pc", "imu_data_full": "imu_data_full",
+            "vehicle_vel": "vehicle_vel", "vicon_x500_8": "vicon_x500_8"}
+    for folder, name in want.items():
+        assert stream_name(folder) == name, folder

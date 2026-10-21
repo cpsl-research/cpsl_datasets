@@ -29,7 +29,7 @@ GROUPS = {
     "vehicle": ["vehicle_vel", "vehicle_odom"],
     "vicon": ["vicon_x500_8"],
     "hands": ["hands", "hand_single"],
-    "leap": ["leap_left", "leap_right"],
+    "leap": ["leap_images_left", "leap_images_right"],
 }
 DEFAULT = ("cube", "pc", "lidar", "camera", "imu", "vehicle", "vicon", "hands", "leap")
 
@@ -143,10 +143,10 @@ def build_v1(root, start=10000, n=4, include=DEFAULT, extra_folders=(),
             put(f, lambda k: rng.normal(size=(2, 4 + k, 3)))
         elif f == "hand_single":   # (21, 3)
             put(f, lambda k: rng.normal(size=(21, 3)))
-        elif f == "leap_left":
+        elif f == "leap_images_left":
             put(f, lambda k: rng.integers(0, 255, size=(4, 5), dtype=np.uint8),
                 "png")
-        elif f == "leap_right":
+        elif f == "leap_images_right":
             put(f, lambda k: rng.random(size=(4, 5)).astype(np.float32))
         else:                      # unknown folder
             put(f, lambda k: rng.normal(size=(2,)))
