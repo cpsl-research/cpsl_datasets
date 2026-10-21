@@ -41,8 +41,7 @@ plt.show()
 `drop_invalid=True` removes rows with non-finite or all-zero xyz. Pass `frame="base_link"` to
 `CpslDS` to map x y z through `/tf_static` (v4 files only; otherwise `ValueError`).
 
-**Ouster.** Reader side only: all nine columns come back through `get_point_cloud_columns`
-(checked on a synthetic cloud); no real Ouster file is expected to exist yet.
+**Ouster.** All nine columns come back through `get_point_cloud_columns`; no real Ouster file exists yet.
 
 ## Camera and depth
 
@@ -86,7 +85,7 @@ from cpsl_datasets import CpslDS
 import numpy as np
 import matplotlib.pyplot as plt
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
+ds = CpslDS("capture.h5")
 odom = np.vstack([ds.get_vehicle_odom_data(i) for i in range(len(ds))])
 plt.plot(odom[:, 1], odom[:, 2])           # columns: t, x, y, ...
 plt.show()
@@ -104,8 +103,8 @@ frame names.
 # synth: v4
 from cpsl_datasets import CpslDS
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
-T = ds.get_transform("base_link", "radar")
+ds = CpslDS("capture.h5")
+T = ds.get_transform("base_link", "radar_0")   # frame names: inspect
 print(T[:3, 3], T.dtype)                    # translation in metres
 ```
 
@@ -124,7 +123,8 @@ import matplotlib.pyplot as plt
 
 ds = CpslDS("capture.h5")
 print(ds.vicon_frames)
-v = ds.get_vicon_data(1, name="seg_a")
+name = next(iter(ds.vicon_frames))           # a stream name; inspect lists them
+v = ds.get_vicon_data(1, name=name)
 plt.plot(v[:, 0], v[:, 1], "o-")
 plt.show()
 ```

@@ -5,8 +5,7 @@
 > stored. No range FFT, Doppler, CFAR, calibration or beamforming. Signal processing lives in
 > [CPSL_TI_Radar](https://github.com/davidmhunt/CPSL_TI_Radar) (which includes `radar_gui`).
 
-Open a file as in [index.md](index.md). Snippets name the cube stream because the synthetic
-file has two. Real-file numbers below come from one sensor (`radar06`); nothing here has been
+Open a file as in [index.md](index.md). Real-file numbers below come from one sensor (`radar06`); nothing here has been
 measured on another.
 
 ## ADC cube
@@ -33,7 +32,7 @@ from cpsl_datasets import CpslDS
 import numpy as np
 import matplotlib.pyplot as plt
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
+ds = CpslDS("capture.h5")
 cube = ds.get_radar_adc_data(0)                          # (rx, sample, chirp) complex64
 raw = ds.streams["radar_adc"].read(0, raw=True)          # (2, rx, sample, chirp) int16
 assert np.allclose(raw[0] + 1j * raw[1], cube)
@@ -56,7 +55,7 @@ keys `changed, metrics, path, sha256, status, text, topic`; `text` is the `.cfg`
 # synth: v4
 from cpsl_datasets import CpslDS
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
+ds = CpslDS("capture.h5")
 cfg = ds.get_radar_cfg()
 if cfg is not None:
     m = cfg["metrics"]
@@ -79,7 +78,7 @@ seconds, not epoch time. `{}` when there is none yet.
 # synth: v4
 from cpsl_datasets import CpslDS
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
+ds = CpslDS("capture.h5")
 meta = ds.get_chirp_meta(0)
 print(meta["record_valid"].all(), meta["t_s"][:3])
 ```
@@ -97,7 +96,7 @@ radars, name one: `radar_pc="radar_combined_pc"`.
 from cpsl_datasets import CpslDS
 import matplotlib.pyplot as plt
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
+ds = CpslDS("capture.h5")
 pc = ds.get_radar_point_cloud(0)
 if len(pc):
     plt.scatter(pc[:, 0], pc[:, 1], c=pc[:, 3])
@@ -126,8 +125,8 @@ With `clock="header"` radar frames line up ~100 ms earlier against recv-stamped 
 from cpsl_datasets import CpslDS
 from cpsl_datasets.inspect import clock_report
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st")
-print(clock_report(ds.capture.streams()["radar_adc"]))   # n, n_unstamped, mean_ms, std_ms, ...
+ds = CpslDS("capture.h5")
+print(clock_report(ds.capture.streams()[ds.roles["radar_adc"]]))   # n, n_unstamped, mean_ms, std_ms, ...
 print(ds.get_stamps("radar_adc")[:3])                      # int64 ns, chosen clock
 ```
 
@@ -141,7 +140,7 @@ the reference stamp and the odometry window. Spacing is illustrative; the ~112 m
 lidar getters return the newest sample at or before that cube's stamp (ties go to the later
 row); odometry, velocity, IMU, Vector3 and Vicon return the window
 `(t_ref[idx-1], t_ref[idx]]`. Switch the clock, matching and reference as in
-[index.md](index.md#open-it); `clock="header"` fails on converted v1 files (no header stamps).
+[index.md](index.md#open-it).
 
 **Worked example: a rover capture (`all`).** One rover recording holds `radar_adc` (101 cubes,
 4 Hz), `adc_meta`, `odometry` (15 Hz) and the tracked `odom` to `base_link` edge. On the

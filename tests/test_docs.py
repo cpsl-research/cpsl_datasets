@@ -2,7 +2,9 @@
 import re
 from pathlib import Path
 
+import h5py
 import matplotlib
+import numpy as np
 import pytest
 
 matplotlib.use("Agg")
@@ -16,6 +18,32 @@ BUILDERS = {
     "multi": build_multi_radar,
     "all": build_all,
 }
+# Streams a recorder capture would not have; the doc snippets rely on auto-binding.
+DROP = ("radar_adc_empty", "twist_st", "cmd_vel")
+RENAME = {"odom": "odometry", "radar_pc_0": "radar_front_pc"}  # recorder-like names
+FRAME = ("radar", "radar_0")
+
+
+def _recorder_like(path):
+    """Make a synthetic file look like a recorder capture, so that snippets written for
+    real files (plain CpslDS(path), stream ``odometry``, frame ``radar_0``) are what runs."""
+    with h5py.File(path, "r+") as f:
+        for name in DROP:
+            if name in f:
+                del f[name]
+        for old, new in RENAME.items():
+            if old in f:
+                f.move(old, new)
+        for g in f.values():
+            if g.attrs.get("frame_id") == FRAME[0]:
+                g.attrs["frame_id"] = FRAME[1]
+        if "tf_static" in f:
+            child = [c.decode() if isinstance(c, bytes) else c for c in f["tf_static/child"][:]]
+            del f["tf_static/child"]
+            f["tf_static/child"] = np.array([FRAME[1] if c == FRAME[0] else c for c in child],
+                                            dtype=h5py.string_dtype())
+
+
 PAGES = sorted((ROOT / "docs").glob("*.md"))
 FENCE = re.compile(r"```python\n(.*?)```", re.S)
 
@@ -45,6 +73,8 @@ BLOCKS = _blocks()
 @pytest.mark.parametrize("code,synth,fname", [b[1:] for b in BLOCKS], ids=[b[0] for b in BLOCKS])
 def test_snippet_runs(tmp_path, monkeypatch, code, synth, fname):
     BUILDERS[synth](tmp_path / fname)
+    if code.startswith("# synth:"):  # docs blocks only; README blocks run on the raw fixture
+        _recorder_like(tmp_path / fname)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("matplotlib.pyplot.show", lambda *a, **k: None)
     exec(compile(code, "doc-snippet", "exec"), {"__name__": "__doc__"})

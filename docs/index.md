@@ -4,7 +4,7 @@ Three pages: this one (what a dataset is, how to open one), [streams.md](streams
 (every non-radar stream; [appendix](streams.md#appendix-every-role-getter-and-return) lists every
 role with getter, shape and stamp rule) and [radar.md](radar.md). Snippets run as written once
 `capture.h5` is your file; the `# synth:` comment names the synthetic capture they are tested
-against. Use `uv run` for everything (see the [README](../README.md); it also shows how to
+against. Stream names are those of a console capture; your file's are in `ds.roles` or `inspect`. Use `uv run` for everything (see the [README](../README.md); it also shows how to
 [build the API reference](../README.md#api-reference)).
 
 ## First five minutes
@@ -83,7 +83,7 @@ getter returns that role's newest sample at or before the reference sample's sta
 # synth: v4
 from cpsl_datasets import CpslDS
 
-with CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st") as ds:
+with CpslDS("capture.h5") as ds:
     print(ds)                          # file, frames, bound roles
     print(len(ds), ds.reference)       # number of frames, reference role
     print(ds.roles)                    # role -> stream name actually bound
@@ -93,15 +93,15 @@ with CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st") as ds:
 ```
 
 If several streams match one role, construction raises `ValueError` naming the matches
-(`radar_adc: 2 streams match`). Name the stream, or switch the role off with `False`. The same
-file above would not open as plain `CpslDS("capture.h5")` because it has two cube streams and
-two velocity streams. A capture with several radars needs the same treatment:
+(`radar_pc: 3 streams match`). Name the stream, or switch the role off with `False`. Files with
+several radars (the converted vicon and IcaRAus v1 files) always need this, so plain
+`CpslDS(path)` fails on them; take the names from `inspect`:
 
 ```python
 # synth: multi
 from cpsl_datasets import CpslDS
 
-ds = CpslDS("capture.h5", radar_pc="radar_pc_0", lidar=False)
+ds = CpslDS("capture.h5", radar_pc="radar_front_pc")   # a stream name from inspect
 print(ds.roles)
 ```
 
@@ -113,7 +113,7 @@ A role with no stream in the file makes its getter raise `ValueError` ("no <role
 # synth: v4
 from cpsl_datasets import CpslDS
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", vehicle_vel="twist_st", sync=False)
+ds = CpslDS("capture.h5", sync=False)
 print(ds.get_vehicle_odom_data(2).shape)   # sample 2 of the odometry stream itself
 ```
 
@@ -137,7 +137,8 @@ print(len(ds), ds.reference)        # frames are now odometry samples
 - `match="previous"` (default) serves the newest sample at or before the reference stamp;
   `"nearest"` the closest either side (ties go to the earlier). Windowed streams are unchanged.
 - `clock="recv"` (default) aligns on the recording host's receive stamp; `"header"` uses the
-  message stamp and raises if any bound stream has none (add `tf_message=False`). The two
+  message stamp and raises if any bound stream has none (add `tf_message=False`). Native console
+  captures only: converted v1 files have no header stamps (-1) and raise. The two
   differ by about 100 ms on `radar06` and about 3 ms on a rover capture ([radar.md](radar.md)).
 
 ## Capture modes
