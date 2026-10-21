@@ -96,3 +96,76 @@ def test_compilation_v4_fixture(tmp_path):
     fig, axs = plt.subplots(1, 3)
     CpslPlotter(ds).plot_compilation(idx=0, axs=axs)
     saved(fig, tmp_path, "comp2.png")
+
+
+def _getters(tmp_path):
+    from synth_h5 import build_getters
+    return CpslDS(build_getters(tmp_path / "g.h5"))
+
+
+def test_plot_imu(tmp_path):
+    ds = _getters(tmp_path)
+    fig, axs = plt.subplots(2, 1)
+    CpslPlotter(ds).plot_imu(ax=axs)
+    assert len(axs[0].lines) == 3 and len(axs[1].lines) == 3
+    assert len(axs[0].lines[0].get_xdata()) == 20
+    saved(fig, tmp_path, "imu.png")
+
+
+def test_plot_vehicle_vel(tmp_path):
+    ds = _getters(tmp_path)
+    fig, ax = plt.subplots()
+    CpslPlotter(ds).plot_vehicle_vel(ax=ax)
+    assert len(ax.lines) == 2 and "20 samples" in ax.get_title()
+    saved(fig, tmp_path, "vel.png")
+
+
+def test_plot_imu_absent_raises(tmp_path):
+    ds = CpslDS(mixed(tmp_path / "m.h5"))
+    with pytest.raises(ValueError):
+        CpslPlotter(ds).plot_imu()
+
+
+def test_plot_hands_3d_and_absent(tmp_path):
+    from synth_h5 import build_human_movement
+    ds = CpslDS(build_human_movement(tmp_path / "h.h5"))
+    pl = CpslPlotter(ds)
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    pl.plot_hands_3d(1, ax=ax)  # both hands present
+    assert len(ax.collections) == 2
+    assert [t.get_text() for t in ax.get_legend().get_texts()] == ["left", "right"]
+    assert "leap_link" in ax.get_xlabel()
+    saved(fig, tmp_path, "h1.png")
+    fig2 = plt.figure()
+    ax2 = fig2.add_subplot(projection="3d")
+    pl.plot_hands_3d(2, ax=ax2)  # left hand absent in sample 2
+    assert "left (absent)" in [t.get_text() for t in ax2.get_legend().get_texts()]
+    saved(fig2, tmp_path, "h2.png")
+
+
+def test_plot_hands_no_stream_raises(tmp_path):
+    ds = CpslDS(mixed(tmp_path / "m.h5"))
+    with pytest.raises(ValueError):
+        CpslPlotter(ds).plot_hands_3d(0)
+
+
+def test_plot_leap_images(tmp_path):
+    from synth_h5 import build_human_movement
+    ds = CpslDS(build_human_movement(tmp_path / "h.h5"))
+    fig, axs = plt.subplots(1, 2)
+    CpslPlotter(ds).plot_leap_images(2, axs=axs)
+    assert all(len(a.images) == 1 for a in axs)
+    assert np.array_equal(np.asarray(axs[0].images[0].get_array()),
+                          ds.get_leap_motion_image_frame_left(2))
+    fig0, axs0 = plt.subplots(1, 2)  # sample 0: right camera has no frame yet
+    CpslPlotter(ds).plot_leap_images(0, axs=axs0)
+    assert axs0[1].texts[0].get_text() == "no frame"
+    saved(fig, tmp_path, "leap.png")
+
+
+def test_plot_leap_images_absent(tmp_path):
+    ds = CpslDS(mixed(tmp_path / "m.h5"))
+    fig, axs = plt.subplots(1, 2)
+    CpslPlotter(ds).plot_leap_images(0, axs=axs)
+    assert [a.texts[0].get_text() for a in axs] == ["absent", "absent"]

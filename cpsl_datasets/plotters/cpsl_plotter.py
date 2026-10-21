@@ -127,6 +127,97 @@ class CpslPlotter:
         ax.grid(True)
         self._finish(show)
 
+    # --- time series -----------------------------------------------------
+    def _series(self, ax, data, labels, title, ylabel, unit_note=""):
+        ax = self._ax(ax)
+        data = np.asarray(data)
+        if len(data):
+            for k, lab in enumerate(labels):
+                ax.plot(data[:, 0], data[:, 1 + k], label=lab)
+            ax.legend(fontsize=self.font_size_legend)
+        ax.set_title("%s: %d samples%s" % (title, len(data), unit_note),
+                     fontsize=self.font_size_title)
+        ax.set_xlabel("t (s)", fontsize=self.font_size_axis_labels)
+        ax.set_ylabel(ylabel, fontsize=self.font_size_axis_labels)
+        ax.grid(True)
+        return ax
+
+    def _whole(self, role, cols):
+        """``(m, 1+len(cols))`` ``t, cols`` of every stored row of a row stream."""
+        ds = self.dataset
+        ds._stream(role)
+        s = ds.streams[role]
+        data = np.asarray(s._g["data"][:])[:, cols]
+        return np.c_[np.asarray(ds._t[role]) * 1e-9, data]
+
+    def plot_imu(self, ax=None, show=False):
+        """Gyro (rad/s) and accelerometer (m/s^2) of the whole IMU stream against time
+        (two axes: pass ``ax`` as a length-2 sequence, else a new figure is made)."""
+        from cpsl_datasets.cpsl_ds import _IMU_COLS
+        if ax is None:
+            ax = plt.subplots(2, 1, sharex=True)[1]
+        for a, names, ylab in ((ax[0], ("wx", "wy", "wz"), "angular rate (rad/s)"),
+                               (ax[1], ("ax", "ay", "az"), "acceleration (m/s^2)")):
+            d = self._whole("imu", [_IMU_COLS.index(c) for c in names])
+            self._series(a, d, names, "IMU", ylab)
+        self._finish(show)
+
+    def plot_vehicle_vel(self, ax=None, show=False):
+        """Forward velocity vx (m/s) and yaw rate wz (rad/s) of the whole velocity stream."""
+        from cpsl_datasets.cpsl_ds import VEL_COLS
+        ds = self.dataset
+        ds._stream("vehicle_vel")
+        cols = VEL_COLS[ds.streams["vehicle_vel"].type]
+        d = self._whole("vehicle_vel", list(cols))
+        ax = self._series(ax, d, ("vx (m/s)", "wz (rad/s)"), "Vehicle velocity", "vx / wz")
+        self._finish(show)
+        return ax
+
+    # --- hands -----------------------------------------------------------
+    def plot_hands_3d(self, sample_idx, ax=None, show=False):
+        """3D scatter of the Leap hand joints (left blue, right red) in the Leap
+        sensor frame as stored (metres, raw Leap coordinates). An absent hand
+        (all-zero placeholder) is not drawn and is noted in the legend."""
+        ds = self.dataset
+        if ax is None:
+            ax = plt.figure().add_subplot(projection="3d")
+        roles = [(r, h, c) for r, h, c in (("hand_left", "left", "tab:blue"),
+                                           ("hand_right", "right", "tab:red"),
+                                           ("hand", None, "tab:green")) if r in ds.streams]
+        if not roles:
+            raise ValueError("dataset has no hand stream")
+        for _, h, c in roles:
+            pts = ds.get_hand_tracking_data(sample_idx, h)
+            name = h or "hand"
+            if ds.hand_present(sample_idx, h):
+                ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], color=c, label=name, s=self.marker_size)
+            else:
+                ax.scatter([], [], [], color=c, label=name + " (absent)")
+        ax.set_xlabel("x (m, leap_link)", fontsize=self.font_size_axis_labels)
+        ax.set_ylabel("y (m, leap_link)", fontsize=self.font_size_axis_labels)
+        ax.set_zlabel("z (m, leap_link)", fontsize=self.font_size_axis_labels)
+        ax.set_title("Hands (Leap sensor frame)", fontsize=self.font_size_title)
+        ax.legend(fontsize=self.font_size_legend)
+        self._finish(show)
+
+    # --- Leap images -----------------------------------------------------
+    def plot_leap_images(self, sample_idx, axs=None, show=False):
+        """Left and right Leap camera images (mono8) side by side."""
+        ds = self.dataset
+        if axs is None or len(axs) == 0:
+            axs = plt.subplots(1, 2, figsize=(10, 5))[1]
+        for ax, role, fn in zip(axs, ("leap_left", "leap_right"),
+                                (ds.get_leap_motion_image_frame_left,
+                                 ds.get_leap_motion_image_frame_right)):
+            ax.set_title(role.replace("_", " "))
+            img = np.asarray(fn(sample_idx)) if role in ds.streams else np.empty((0, 0))
+            if img.size == 0:
+                ax.text(0.5, 0.5, "absent" if role not in ds.streams else "no frame",
+                        ha="center", va="center", transform=ax.transAxes)
+            else:
+                ax.imshow(img, cmap="gray")
+        self._finish(show)
+
     # --- compilation -----------------------------------------------------
     def plot_compilation(self, idx=0, axs=None, show=False):
         """Radar cloud, 2D lidar, camera side by side (roles that are absent
