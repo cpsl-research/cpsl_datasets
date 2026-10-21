@@ -5,16 +5,16 @@
 > stored. No range FFT, Doppler, CFAR, calibration or beamforming. Signal processing lives in
 > [CPSL_TI_Radar](https://github.com/davidmhunt/CPSL_TI_Radar) (which includes `radar_gui`).
 
-Open a file as in [index.md](index.md). Real-file numbers below come from one sensor (`radar06`); nothing here has been
-measured on another.
+Open a file as in [index.md](index.md). Real-file numbers below come from one sensor
+(`radar06`).
 
 ## ADC cube
 
 Stored: an `ADCDataCube` stream. `data` is `int16`, `(N, 2, rx, sample, chirp)`; the `2` is
-real and imaginary. `get_radar_adc_data(idx)` returns `complex64` `(rx, sample, chirp)`, i.e.
-`d[0] + 1j * d[1]`. The values are the raw `int16` ADC counts held in a `complex64`: no scaling, no
-volts, no windowing. Cube sizes differ per file (`radar06`: `(1, 3300, 255)`; converted files: `(4, 70, 120)`, `(4, 63, 300)`).
-Read the group's `axes` attribute to see the stored axis order instead of assuming it.
+real and imaginary. `get_radar_adc_data(idx)` returns `complex64` `(rx, sample, chirp)`: the raw
+`int16` ADC counts, with no scaling, volts or windowing. Cube sizes differ per file (`radar06`:
+`(1, 3300, 255)`; converted files: `(4, 70, 120)`, `(4, 63, 300)`). The group's `axes` attribute
+gives the stored axis order.
 
 ```mermaid
 flowchart LR
@@ -68,10 +68,8 @@ if cfg is not None:
 
 Newer recorders store an `adc_meta` stream (`ADCChirpMeta`) beside the cube, one sample per
 cube. `get_chirp_meta(idx)` returns a dict of the stored arrays: per-chirp arrays of length
-`n_chirps` (`record_valid`, `adc_complete`, `has_time`, `time_interpolated`, `flags`, `run_idx`,
-`global_chirp_idx`, `ts_ticks`, `sat_slices`, `sat_ref_lag`, `sat_slices_aligned`, `t_s`),
-per-frame scalars (`frame_index`, `run_known`, `run_idx_frame`, `records_valid`,
-`records_invalid`, `records_other_run`) and `prev_tail_sat`. `t_s` is the radar's own clock in
+`n_chirps` (e.g. `record_valid`, `t_s`), per-frame scalars (e.g. `frame_index`) and
+`prev_tail_sat`; the full key list is in the appendix. `t_s` is the radar's own clock in
 seconds, not epoch time. `{}` when there is none yet.
 
 ```python
@@ -133,22 +131,16 @@ print(ds.get_stamps("radar_adc")[:3])                      # int64 ns, chosen cl
 ![Timing: stamp axes, radar offset and odometry window](figures/radar_timing.png)
 
 *Figure 4. Schematic: header and recv stamps of a radar, an odometry stream on recv stamps,
-the reference stamp and the odometry window. Spacing is illustrative; the ~112 ms offset is
-`radar06`.*
+the reference stamp and the odometry window. Spacing is illustrative.*
 
-**Frame-synced getters.** Frame `idx` is the idx-th radar cube. Cube, point cloud, camera and
-lidar getters return the newest sample at or before that cube's stamp (ties go to the later
-row); odometry, velocity, IMU, Vector3 and Vicon return the window
-`(t_ref[idx-1], t_ref[idx]]`. Switch the clock, matching and reference as in
-[index.md](index.md#open-it).
-
-**Worked example: a rover capture (`all`).** One rover recording holds `radar_adc` (101 cubes,
+**Worked example: a rover capture (`all`).** Frame `idx` is the idx-th radar cube; switch the
+clock, matching and reference as in [index.md](index.md#open-it). One rover recording holds `radar_adc` (101 cubes,
 4 Hz), `adc_meta`, `odometry` (15 Hz) and the tracked `odom` to `base_link` edge. On the
 default recv clock `adc_meta` arrives about 3 ms *after* its cube, so it is not yet "at or
 before" the cube's stamp: for 62 of the 101 frames `ds.match("chirp_meta", i)` serves the
 **previous** frame's meta (`dt` about -251 ms, one cube period). `clock="header"` fixes it: the
-two share a header stamp and `dt` is 0 for every frame. Odometry `dt` was -68 to -3 ms on recv. `interp` of odometry at the radar stamps gives a pose for 100 of 101 frames; the last
-cube is stamped after the final odometry row, so it is NaN.
+two share a header stamp and `dt` is 0 for every frame. Odometry `dt` was -68 to -3 ms on recv. `interp` of odometry at the radar stamps gives a pose for
+100 of 101 frames; the last cube is stamped after the final odometry row, so it is NaN.
 
 ```python
 # synth: all
@@ -170,7 +162,15 @@ name streams as keyword arguments (`radar_pc="radar_pc_1"`). `CPSL_STREAMS` (a J
 stream map) is read only by `notebooks/dataset_viewer.ipynb`; in your own script use
 `CpslDS(path, **json.loads(os.getenv("CPSL_STREAMS", "{}")))`.
 
-## Appendix: radar `metrics` keys
+## Appendix: radar `metrics` keys and chirp-meta keys
+
+Chirp meta, per-chirp arrays of length `n_chirps`: `record_valid, adc_complete, has_time,
+time_interpolated, flags, run_idx, global_chirp_idx, ts_ticks, sat_slices, sat_ref_lag,
+sat_slices_aligned, t_s`. Per-frame scalars: `frame_index, run_known, run_idx_frame,
+records_valid, records_invalid, records_other_run`. Plus `prev_tail_sat`.
+
+`metrics` keys:
+
 
 `adc_start_us, azimuth_res_deg, bandwidth_mhz, bytes_per_chirp, bytes_per_frame,
 bytes_per_sample, calculator, calculator_version, center_ghz, chirp_us, chirps_per_loop,

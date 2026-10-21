@@ -1,10 +1,11 @@
 # CPSL Datasets user guide
 
-Three pages: this one (what a dataset is, how to open one), [streams.md](streams.md)
-(every non-radar stream; [appendix](streams.md#appendix-every-role-getter-and-return) lists every
-role with getter, shape and stamp rule) and [radar.md](radar.md). Snippets run as written once
-`capture.h5` is your file; the `# synth:` comment names the synthetic capture they are tested
-against. Stream names are those of a console capture; your file's are in `ds.roles` or `inspect`. Use `uv run` for everything (see the [README](../README.md); it also shows how to
+Three pages: this one, [streams.md](streams.md) (every non-radar stream; its
+[appendix](streams.md#appendix-every-role-getter-and-return) lists every role with getter,
+shape and stamp rule) and [radar.md](radar.md). Snippets run as written once `capture.h5` is your
+file; the `# synth:` comment names the synthetic capture they are tested against. Stream names
+are those of a console capture; your file's are in `ds.roles` or `inspect`. Use `uv run` for
+everything (see the [README](../README.md), which also shows how to
 [build the API reference](../README.md#api-reference)).
 
 ## First five minutes
@@ -41,7 +42,8 @@ len(ds) = 101, ds.reference = 'radar_adc'
 ```
 
 `ds.reference` is the role whose samples define the **frames**: `len(ds)` and `idx` count its
-samples (here, 101 radar cubes) and every other role is matched to frame `idx`. Choose it with `reference=`.
+samples (here, 101 radar cubes) and every other role is matched to frame `idx`. Choose it with
+`reference=`.
 
 ## What a dataset is
 
@@ -61,18 +63,16 @@ flowchart LR
     T --> R3["get_transform(target, source)"]
 ```
 
-*Figure 1. File layout and how `CpslDS` exposes it. The format itself is defined in the Sensors
-repo, which this guide links and does not copy:
+*Figure 1. File layout and how `CpslDS` exposes it. The format is defined in the Sensors repo:
 [hdf5_format.md and reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs).*
 
 ## Look before you open
 
-The `inspect` command above prints the file, format, version and whether it was `closed_cleanly`, a table of streams
-(name, type, samples, frame id, time span), a recv-versus-header clock report, the static
-transforms and tracked tf pairs. `--validate` adds structural checks and prints
-`validate: no problems` when the file is sound. If it says "header stamps are -1 (no header):
-use recv", the file has no usable header stamps (every converted v1 file, see
-[radar.md](radar.md)).
+The `inspect` command above prints the format, version and `closed_cleanly`, a table of streams
+(name, type, samples, frame id, time span), a recv-versus-header clock report, and the static
+and tracked transforms. `--validate` adds structural checks and prints `validate: no problems`
+when the file is sound. "header stamps are -1 (no header): use recv" means the file has no
+usable header stamps (every converted v1 file, see [radar.md](radar.md)).
 
 ## Open it
 
@@ -117,9 +117,8 @@ ds = CpslDS("capture.h5", sync=False)
 print(ds.get_vehicle_odom_data(2).shape)   # sample 2 of the odometry stream itself
 ```
 
-Early frames can be empty: if a stream's first sample arrived after the reference stamp, its
-getter returns an empty array (`(0, 4)`, `(0, 0)`, `nan` for yaw). Test the size before
-indexing. **Getters read from the HDF5 file on every call**, so `np.stack` over every frame
+Early frames can be empty: a stream whose first sample arrived after the reference stamp
+returns an empty array (`(0, 4)`, `(0, 0)`, `nan` for yaw). Test the size before indexing. **Getters read from the HDF5 file on every call**, so `np.stack` over every frame
 loads the whole stream into memory; loop and reduce, or slice the stream itself.
 
 **Choosing the reference.** To align to something other than the default, say so:
@@ -156,15 +155,15 @@ reference stamp. In `sampled`, dt can reach a tick period.*
 
 `inspect` prints `capture_mode`, `sample_rate_hz` and each stream's `mode`; for `sampled`
 streams it adds `fill`, rows divided by ticks in the span (1.00 = a row every tick, `n/a`
-without a rate, as in v1 files converted before the rate was written). In Python:
-`ds.capture.capture_mode`, `ds.capture.sample_rate_hz` (`None` if absent) and
-`ds.streams[name].mode`.
+without a rate). In Python: `ds.capture.capture_mode`, `ds.capture.sample_rate_hz` (`None` if
+absent) and `ds.streams[name].mode`.
 
 ## Which sample, and how far off
 
 `ds.match(role, idx)` returns `Match(j, t_ns, dt_ns)`: the raw sample index served, its stamp
 (int ns, chosen clock) and `dt = t_sample - t_ref`, negative when the sample is older than the
-reference. `ds.row_stamps(role, idx)` gives the stamp of each row a getter returned. To query by time instead of frame:
+reference. `ds.row_stamps(role, idx)` gives the stamp of each row a getter returned. To query by
+time instead of frame:
 
 | Call | Returns |
 |---|---|
@@ -194,4 +193,3 @@ print(np.isnan(pose).any(axis=1).sum(), "frames without a pose")
 print(ds.window("vehicle_odom", t[0], t[1]))    # odometry samples between two frames
 ```
 
-Operator tip: restarting the Rover driver resets its odometry origin.

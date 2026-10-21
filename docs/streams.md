@@ -1,8 +1,7 @@
 # Streams other than radar
 
 Getter, shape, units and frame for each stream; the radar is in [radar.md](radar.md), opening
-a file in [index.md](index.md). Snippets assume
-`import numpy as np`, `import matplotlib.pyplot as plt` and `from cpsl_datasets import CpslDS`.
+a file in [index.md](index.md).
 
 ## Rules that apply to every stream
 
@@ -11,10 +10,9 @@ a file in [index.md](index.md). Snippets assume
 - Two kinds of getter. **Newest-sample** getters (cameras, point clouds, `camera_info`) return
   the newest sample at or before the reference stamp. **Windowed** getters (odometry, velocity,
   IMU, Vector3, Vicon) return every row with a stamp in `(t_ref[idx-1], t_ref[idx]]`, so
-  stacking all frames reproduces the stream once, with no gaps or repeats.
-- An empty result (no sample yet) is `(0, ...)`-shaped, never `None`, except `get_camera_info`
-  (`None`).
-- Time is the chosen clock in seconds (the `t` column of windowed getters); recv by default.
+  stacking all frames reproduces the stream once. Ties on newest-sample getters go to the later row.
+- An empty result (no sample yet) is `(0, ...)`-shaped, never `None`, except `get_camera_info`.
+- Time is the chosen clock in seconds (the `t` column of windowed getters).
 
 ## Lidar
 
@@ -39,16 +37,15 @@ plt.show()
 
 `get_lidar_point_cloud(idx)` is the v1 form: points with `-0.2 < z < 0.1` as `(n, 2)` x y.
 `drop_invalid=True` removes rows with non-finite or all-zero xyz. Pass `frame="base_link"` to
-`CpslDS` to map x y z through `/tf_static` (v4 files only; otherwise `ValueError`).
-
-**Ouster.** All nine columns come back through `get_point_cloud_columns`; no real Ouster file exists yet.
+`CpslDS` to map x y z through `/tf_static` (v4 files only; otherwise `ValueError`). All nine
+Ouster columns come back through `get_point_cloud_columns`; no real Ouster file exists yet.
 
 ## Camera and depth
 
 Stored: `Image` streams. The colour camera keeps the message encoding (`rgb8`, `bgr8`, `rgba8`,
 `bgra8`, `8UC3`), as `uint8`, `(H, W, C)`. The stream named `camera_depth` is `(H, W)`,
-`uint16` (mono16) or `float32` (32FC1). Converted
-real files are `bgr8`: `(720, 1280, 3)` and `(480, 640, 3)` for two of them, depth `(480, 848)`.
+`uint16` (mono16) or `float32` (32FC1). Converted real files are `bgr8`: `(720, 1280, 3)` and
+`(480, 640, 3)`, depth `(480, 848)`.
 
 ```python
 # synth: human
@@ -155,10 +152,9 @@ plt.show()
 ```
 
 **v1 hands.** Hands in converted v1 datasets are also raw Leap coordinates, whatever the
-`frame_id` says (older converted files were stamped `base_link`, wrongly). The console memo
-above found no code that moved v1 hands to the base frame. Sensors [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
-(line 172) says v1 hands were in the base frame. That conflicts with the memo; treat v1 hands
-as raw Leap until someone checks.
+`frame_id` says (older converted files were stamped `base_link`, wrongly). No code was found that
+moved v1 hands to the base frame, but Sensors [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
+(line 172) says they were. Treat v1 hands as raw Leap until someone checks.
 
 ## Leap images
 
@@ -209,3 +205,5 @@ Roles are `CpslDS` keyword names; give a stream name to pick one, `False` to swi
 `ds.sample_index(role, idx)` gives the raw sample index served (`-1`: none yet). Raw stream
 access: `ds.capture.streams()[name]` is a `Stream` with `.msg_type`, `.frame_id`, `.columns`,
 `.attrs`, `len(s)`, `s.read(i)`, `s.stamps("recv" | "header")` and `s.named(i)`.
+
+Restarting the Rover driver resets its odometry origin.
