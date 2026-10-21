@@ -81,6 +81,17 @@ def test_base_frame_option(tmp_path):
         assert c["vehicle_odom"].attrs["child_frame_id"] == "cpsl_ugv_1/base_footprint"
 
 
+def test_hands_frame_default_and_option(tmp_path):
+    tr, out, _ = conv(tmp_path)
+    with Capture(out) as c:
+        for n in ("hand_left", "hand_right", "hand_single"):
+            assert c[n].frame_id == "cpsl_human_movement/leap_link"
+        assert c["lidar"].frame_id == "base_link"
+    tr, out, _ = conv(tmp_path, name="v1b", hands_frame="leap_x", force=True)
+    with Capture(out) as c:
+        assert c["hand_left"].frame_id == c["hand_single"].frame_id == "leap_x"
+
+
 def test_values_round_trip(tmp_path):
     tr, out, _ = conv(tmp_path)
     with Capture(out) as c:

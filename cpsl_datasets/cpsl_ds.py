@@ -573,9 +573,10 @@ class CpslDS:
         and never moved by ``frame=``.** Streams from the Sensors v2 recorder
         carry the Leap frame as ``frame_id`` (``cpsl_human_movement/leap_link``).
         v1 ``hands`` data converted by ``convert_v1`` are the same kind of raw
-        Leap-native metres, not the robot base frame, although convert_v1
-        stamps them with that frame_id (a pending fix; use them as Leap
-        coordinates)."""
+        Leap-native metres; the converter stamps them with the Leap frame
+        (``--hands-frame``, default ``cpsl_human_movement/leap_link``).
+        Files converted before that default stamped ``base_link``
+        wrongly; treat them as Leap coordinates anyway."""
         return self._hand(idx, hand)[0]
 
     def hand_present(self, idx, hand=None):

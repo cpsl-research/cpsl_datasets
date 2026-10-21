@@ -1,7 +1,7 @@
 """Convert a v1 folder-of-``frame_N.npy`` dataset to one cpsl_dataset_hdf5 v4 file.
 
     python -m cpsl_datasets.convert_v1 V1_DIR OUT.h5 [--map folder=type ...]
-        [--base-frame FRAME] [--frame-rate HZ] [--compression gzip|lzf] [--force]
+        [--base-frame FRAME] [--hands-frame FRAME] [--frame-rate HZ] [--compression gzip|lzf] [--force]
 
 The source tree is only ever read. Each folder becomes one stream (attr
 ``legacy_folder`` keeps the folder name; stream names follow the Sensors
@@ -19,7 +19,8 @@ Types and conversions (reading_datasets.md section 5):
 * ``lidar``       (n,4) x y z intensity, same.
 * ``hands``       (2,n,3) -> two ragged streams (folder ``hands`` ->
                   ``hand_left``/``hand_right``, else ``<folder>_left/_right``);
-                  (21,3) -> one stream. x y z, frame_id = --base-frame.
+                  (21,3) -> one stream. x y z, raw Leap metres, frame_id = --hands-frame
+                  (default cpsl_human_movement/leap_link; not the base frame).
 * ``image``       png (cv2, BGR) or npy -> Image; encoding from dtype/channels.
 * ``imu_orient``  (4,) w x y z -> Imu (N,10), orientation only (rest NaN).
 * ``imu_full``    (m,7) t wx wy wz ax ay az -> Imu (N,10), orientation NaN.
@@ -248,9 +249,13 @@ def _image_encoding(a, where):
     return enc
 
 
+HANDS_FRAME = "cpsl_human_movement/leap_link"
+
+
 class _Ctx:
-    def __init__(self, cap, base_frame, stamps, compression):
+    def __init__(self, cap, base_frame, stamps, compression, hands_frame=HANDS_FRAME):
         self.cap, self.base_frame = cap, base_frame
+        self.hands_frame = hands_frame
         self.stamps, self.compression = stamps, compression
         self.streams = []  # (stream name, folder, n)
 
@@ -346,7 +351,7 @@ def _convert_hands(ctx, f, sname):
         if two else [sname]
     for n in names:
         ctx.add(n, f, MSG["cloud"], {"columns": ["x", "y", "z"],
-                                     "frame_id": ctx.base_frame})
+                                     "frame_id": ctx.hands_frame})
     for num, p in f.files:
         a = np.asarray(_load(p), np.float64)
         if two:
@@ -370,7 +375,7 @@ def refuse_unsafe(v1_dir, out, force):
 
 
 def convert(v1_dir, out, overrides=None, base_frame="base_link", frame_rate=10.0,
-            compression=None, force=False, log=print):
+            compression=None, force=False, log=print, hands_frame=HANDS_FRAME):
     """Convert; return ``{"streams": {name: n}, "skipped": [...], "problems": None}``."""
     v1_dir = Path(v1_dir)
     if not v1_dir.is_dir():
@@ -398,7 +403,7 @@ def convert(v1_dir, out, overrides=None, base_frame="base_link", frame_rate=10.0
     ok = False
     try:
         cap.write_tf_static([])
-        ctx = _Ctx(cap, base_frame, stamps, compression)
+        ctx = _Ctx(cap, base_frame, stamps, compression, hands_frame)
         for f in folders:
             _convert_folder(ctx, f)
         cfg = {n: {"legacy_folder": cap._streams[n].attrs["legacy_folder"]}
@@ -435,6 +440,9 @@ def main(argv=None):
     ap.add_argument("--base-frame", default="base_link",
                     help="frame_id of clouds/imu/vel (the v1 recorder's base_frame; "
                          "see hdf5_format.md preset table). default: base_link")
+    ap.add_argument("--hands-frame", default=HANDS_FRAME,
+                    help="frame_id of hand streams (v1 hand data is raw Leap metres in "
+                         "the sensor frame, not base_link). default: %s" % HANDS_FRAME)
     ap.add_argument("--frame-rate", type=float, default=10.0,
                     help="Hz used to synthesize frame stamps when no t column exists")
     ap.add_argument("--compression", choices=["gzip", "lzf"], default=None)
@@ -442,7 +450,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         res = convert(a.v1_dir, a.out, parse_maps(a.map), a.base_frame, a.frame_rate,
-                      a.compression, a.force)
+                      a.compression, a.force, hands_frame=a.hands_frame)
     except ConvertError as e:
         print("error: %s" % e, file=sys.stderr)
         return 1
