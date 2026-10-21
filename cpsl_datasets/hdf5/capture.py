@@ -45,6 +45,17 @@ class Stream:
         self.columns = attr_list(group.attrs.get("columns"))
         self._off = None
 
+    @property
+    def mode(self):
+        """How the stream was recorded: ``"all"`` (every message) or
+        ``"sampled"`` (the newest unseen message per tick of the capture's
+        ``sample_rate_hz``). The stream's own ``mode`` attr, else the root
+        ``capture_mode``; None when the file records neither (v2/v3)."""
+        v = self.attrs.get("mode")
+        if v is None:
+            v = self._g.file.attrs.get("capture_mode")
+        return attr_str(v) if v is not None else None
+
     def __len__(self):
         if "stamp_recv_ns" in self._g:
             return int(self._g["stamp_recv_ns"].shape[0])
@@ -117,7 +128,8 @@ class Capture:
     """Opens a capture read-only.
 
     Attributes: ``version``, ``closed_cleanly``, ``warnings`` (list of str),
-    ``attrs`` (root attrs), ``path``. Use as a context manager or call close().
+    ``attrs`` (root attrs), ``path``, ``capture_mode``, ``sample_rate_hz``.
+    Use as a context manager or call close().
     """
 
     def __init__(self, path):
@@ -146,6 +158,24 @@ class Capture:
 
     def __exit__(self, *exc):
         self.close()
+
+    @property
+    def capture_mode(self):
+        """Root ``capture_mode``: ``"all"`` (every message is a row) or
+        ``"sampled"`` (one row per tick at most, the newest unseen message;
+        the tick time itself is not stored). None when the file has no such
+        attr (format v2/v3). A stream may override it: ``Stream.mode``."""
+        v = self.attrs.get("capture_mode")
+        return attr_str(v) if v is not None else None
+
+    @property
+    def sample_rate_hz(self):
+        """Root ``sample_rate_hz`` (float), the tick rate of ``sampled``
+        streams; None when absent (e.g. files converted before the converter
+        wrote it). The recorder writes it even when every stream is ``all``,
+        where it means nothing."""
+        v = self.attrs.get("sample_rate_hz")
+        return float(v) if v is not None else None
 
     @property
     def h5(self):

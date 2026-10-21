@@ -391,7 +391,8 @@ def convert(v1_dir, out, overrides=None, base_frame="base_link", frame_rate=10.0
     tmp = out.with_name(out.name + ".partial")
     all_ns = [v for v in stamps.values()]
     cap = CaptureFile(tmp, attrs={
-        "namespace": "/", "capture_mode": "sampled", "timestamps": ts_text,
+        "namespace": "/", "capture_mode": "sampled",
+        "sample_rate_hz": float(frame_rate), "timestamps": ts_text,
         "tf_track": [""], "tf_topic": "/tf", "tf_static_topic": "/tf_static",
         "start_recv_ns": min(all_ns) if all_ns else 0,
         "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),

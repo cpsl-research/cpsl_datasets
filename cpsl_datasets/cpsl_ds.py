@@ -1,5 +1,6 @@
 """CpslDS v2: v1-style frame getters over a cpsl_dataset_hdf5 capture (format v2-4)."""
 import warnings
+from collections import namedtuple
 
 import numpy as np
 
@@ -77,6 +78,35 @@ REFERENCE_ORDER = ("radar_adc", "radar_pc", "lidar", "camera")
 CLOUD_ROLES = ("radar_pc", "lidar")
 VEL_COLS = {"Twist": (0, 5), "TwistStamped": (0, 5), "Odometry": (7, 12)}  # vx, wz
 ODOM_COLS = 14  # t + x y z qx qy qz qw vx vy vz wx wy wz
+MATCH_METHODS = ("previous", "nearest")
+# interp(): stream type -> (first, last+1) column of its quaternion (None = no rotation)
+INTERP_QUAT = {"Odometry": (3, 7), "TransformStamped": (3, 7), "Imu": (0, 4),
+               "Vector3Stamped": None, "Twist": None, "TwistStamped": None}
+# types whose getters return a window of rows rather than one sample
+WINDOWED_TYPES = ("Odometry", "Twist", "TwistStamped", "Imu", "Vector3Stamped",
+                  "TransformStamped")
+
+Match = namedtuple("Match", "j t_ns dt_ns")
+Match.__doc__ = """Which sample of a role answers a query.
+
+``j`` is the raw sample index in the role's stream (-1 = no sample), ``t_ns``
+its stamp (int64 ns, the dataset's ``clock``) and ``dt_ns = t_sample -
+t_ref`` (negative = the sample is older than the reference; None when
+``sync=False``). ``t_ns`` and ``dt_ns`` are None when ``j`` is -1."""
+
+
+def _slerp(qa, qb, u):
+    """Row-wise spherical interpolation of unit quaternions (n, 4), ``u`` (n, 1)."""
+    dot = np.sum(qa * qb, axis=1, keepdims=True)
+    qb = np.where(dot < 0, -qb, qb)
+    th = np.arccos(np.clip(np.abs(dot), 0.0, 1.0))
+    sn = np.sin(th)
+    small = sn < 1e-6
+    safe = np.where(small, 1.0, sn)
+    wa = np.where(small, 1 - u, np.sin((1 - u) * th) / safe)
+    wb = np.where(small, u, np.sin(u * th) / safe)
+    q = wa * qa + wb * qb
+    return q / np.linalg.norm(q, axis=1, keepdims=True)
 
 
 def _enc(stream):
@@ -89,7 +119,7 @@ class CpslDS:
 
     ``CpslDS(path, radar_adc=None, radar_pc=None, lidar=None, camera=None,
     vehicle_odom=None, hand_left=None, hand_right=None, hand=None,
-    reference=None, sync=True, clock="recv", frame=None)``
+    reference=None, sync=True, clock="recv", frame=None, ..., match="previous")``
 
     **Stream roles.** Each role kwarg takes a stream (group) name. ``None``
     auto-detects: the one stream whose ``msg_type`` matches (radar_adc:
@@ -114,7 +144,15 @@ class CpslDS:
     newest sample stamped at or before the reference sample (reading_datasets
     section 3 ``last``; ties go to the later row). When a stream has no
     sample yet, the getter returns an empty array (shapes below), as v1 did
-    for an unreadable file. With no reference (e.g. a capture holding only
+    for an unreadable file. **Choosing the reference:** ``reference="radar_adc"``
+    (any bound role, e.g. ``"vehicle_odom"``, ``"lidar"``) makes that stream
+    the one ``idx`` counts and the others are aligned to; the default is the
+    first of radar_adc, radar_pc, lidar, camera that has samples.
+    **Which sample (``match=``).** ``"previous"`` (default) serves the newest
+    sample at or before the reference stamp; ``match="nearest"`` serves the
+    closest one in time either side (an exact tie goes to the earlier). Both
+    apply to frame getters; the row-window getters (odometry, imu, ...) keep
+    their ``(t_ref[idx-1], t_ref[idx]]`` window either way. With no reference (e.g. a capture holding only
     odometry) ``num_frames`` is 0 and synced getters raise; pass
     ``reference="vehicle_odom"`` or ``sync=False``.
     **sync=False** makes ``idx`` the role's own raw sample index (out of
@@ -188,6 +226,23 @@ class CpslDS:
       (v4). A tracked edge is interpolated at ``t_ns``, or at the reference
       stamp of ``idx``, on the chosen clock; it raises if neither is given.
 
+    **Time-aware access** (all additive; stamps are int64 ns on the chosen
+    clock, ``dt_ns = t_sample - t_ref``):
+
+    - ``match(role, idx)`` -> ``Match(j, t_ns, dt_ns)``: which sample the
+      getters serve for frame ``idx``, its stamp and its distance to the
+      reference. ``row_stamps(role, idx)``: the stamps of the rows a windowed
+      getter returned.
+    - ``at_time(role, t_ns, method="previous"|"nearest", tol_ns=None)`` ->
+      ``Match`` for an arbitrary time; ``window(role, t0_ns, t1_ns)`` -> raw
+      sample indices with ``t0 < stamp <= t1``; ``read(role, j)`` -> what the
+      role's getter returns, for raw sample ``j``.
+    - ``interp(role, t_ns, max_gap_ns=None)``: linear (slerp on the
+      quaternion) value of an odometry / vicon / imu / vector3 stream at any
+      time; NaN outside the data or across a gap.
+    - Capture mode: ``capture.capture_mode`` (``"all"`` | ``"sampled"``),
+      ``capture.sample_rate_hz``, ``capture.streams()[name].mode``.
+
     Use as a context manager or call ``close()``.
     """
 
@@ -197,9 +252,13 @@ class CpslDS:
                  clock="recv", frame=None, vehicle_vel=None, imu=None,
                  camera_depth=None, leap_left=None, leap_right=None,
                  camera_info=None, chirp_meta=None, vector3=None, tf_message=None,
-                 vicon=None):
+                 vicon=None, match="previous"):
         if clock not in ("recv", "header"):
             raise ValueError("clock must be 'recv' or 'header', got %r" % (clock,))
+        if match not in MATCH_METHODS:
+            raise ValueError("match must be one of %s, got %r" % (MATCH_METHODS, match))
+        self.match_mode = match
+        self._data_cache = {}
         self.dataset_path = str(dataset_path)
         self.sync = bool(sync)
         self.clock = clock
@@ -363,8 +422,184 @@ class CpslDS:
         i, t = self._ref_time(idx)
         if role == self.reference:
             return i
-        k = int(np.searchsorted(self._sorted[role], t, side="right")) - 1
+        return self._locate(role, t, self.match_mode)
+
+    def _locate(self, role, t, method):
+        """Raw sample index of ``role`` at time ``t`` (-1 = none): the newest
+        sample stamped <= t (``previous``; ties on equal stamps go to the later
+        row) or the closest one (``nearest``; an exact tie goes to the earlier)."""
+        ts = self._sorted[role]
+        n = len(ts)
+        k = int(np.searchsorted(ts, t, side="right")) - 1
+        if method == "nearest" and k + 1 < n:
+            if k < 0 or ts[k + 1] - t < t - ts[k]:
+                k += 1
         return int(self._order[role][k]) if k >= 0 else -1
+
+    # --- time-aware access ----------------------------------------------------
+    def match(self, role, idx):
+        """Which sample of ``role`` the getters serve for frame ``idx``.
+
+        Returns ``Match(j, t_ns, dt_ns)``: ``j`` the raw sample index (-1 = no
+        sample yet; never use it to index a stamp array), ``t_ns`` its stamp
+        and ``dt_ns = t_sample - t_ref`` (negative: older than the reference
+        sample; the reference role itself gives 0). With ``sync=False`` ``idx``
+        is the role's own index and ``dt_ns`` is None. Which sample is chosen
+        follows ``match=`` of the constructor; which stream is the reference
+        follows ``reference=``."""
+        j = self.sample_index(role, idx)
+        if j < 0:
+            return Match(-1, None, None)
+        t = int(self._t[role][j])
+        dt = t - self._ref_time(idx)[1] if self.sync else None
+        return Match(j, t, dt)
+
+    def _is_windowed(self, role):
+        return self._stream(role).type in WINDOWED_TYPES
+
+    def row_stamps(self, role, idx):
+        """int64 ns stamps (chosen clock) of the rows the getter of ``role``
+        returns for frame ``idx``: the window's rows for odometry / vel / imu /
+        vector3 / vicon (synced: ``(t_ref[idx-1], t_ref[idx]]``, 0..m of them),
+        else the one served sample (empty when none yet). Row ``i`` of the
+        getter's array has stamp ``row_stamps(...)[i]``."""
+        self._stream(role)
+        if self._is_windowed(role):
+            return self._t[role][self._window(role, idx)].copy()
+        j = self.sample_index(role, idx)
+        return self._t[role][[j]].copy() if j >= 0 else np.zeros(0, np.int64)
+
+    def at_time(self, role, t_ns, method="previous", tol_ns=None):
+        """The sample of ``role`` at time ``t_ns`` (int ns, the dataset clock).
+
+        ``method="previous"`` takes the newest sample stamped at or before
+        ``t_ns``; ``"nearest"`` the closest in time either side (a tie goes to
+        the earlier). With ``tol_ns`` a sample further than that from ``t_ns``
+        counts as none. Returns ``Match(j, t_ns, dt_ns)`` with ``dt_ns =
+        t_sample - t_ns``; ``Match(-1, None, None)`` when there is no sample
+        (before the first, empty stream, or outside ``tol_ns``)."""
+        if method not in MATCH_METHODS:
+            raise ValueError("method must be one of %s, got %r" % (MATCH_METHODS, method))
+        self._stream(role)
+        t_ns = int(t_ns)
+        j = self._locate(role, t_ns, method)
+        if j < 0:
+            return Match(-1, None, None)
+        t = int(self._t[role][j])
+        if tol_ns is not None and abs(t - t_ns) > tol_ns:
+            return Match(-1, None, None)
+        return Match(j, t, t - t_ns)
+
+    def window(self, role, t0_ns, t1_ns):
+        """Raw sample indices of ``role`` with ``t0_ns < stamp <= t1_ns``
+        (half open, like the frame windows), in time order. ``t0_ns=None``
+        is unbounded below. Empty int array when nothing falls inside."""
+        self._stream(role)
+        ts = self._sorted[role]
+        lo = 0 if t0_ns is None else int(np.searchsorted(ts, int(t0_ns), side="right"))
+        hi = int(np.searchsorted(ts, int(t1_ns), side="right"))
+        return self._order[role][lo:max(lo, hi)].copy()
+
+    def read(self, role, j):
+        """What the getter of ``role`` returns, for raw sample ``j`` (an index
+        from ``match``, ``at_time`` or ``window``): the image / cube / cloud
+        (``frame=`` applied) / hand ``(21, 3)`` / camera_info dict / chirp_meta
+        dict, or for row roles a one-row array in the getter's layout (time in
+        seconds first, except vicon). ``j = -1`` (no sample) raises IndexError
+        instead of reading the last sample."""
+        s = self._stream(role)
+        j = int(j)
+        if j < 0:
+            raise IndexError("%s: j=%d means no sample (a Match with j=-1); "
+                             "check Match.j before read" % (role, j))
+        j = s._index(j)
+        if role in CLOUD_ROLES:
+            return self._cloud_j(role, j)[0]
+        if role in self.vicon_names:
+            return self._row_at(role, j, None, with_time=False)
+        if role == "vehicle_odom":
+            return self._row_at(role, j, None)
+        if role == "vehicle_vel":
+            return self._row_at(role, j, VEL_COLS[s.type])
+        if role == "imu":
+            return self._row_at(role, j, [_IMU_COLS.index(c) for c in
+                                          ("wx", "wy", "wz", "ax", "ay", "az")])
+        if role == "vector3":
+            return self._row_at(role, j, None)
+        if role in ("hand", "hand_left", "hand_right"):
+            return self._hand_pts(role, j)[0]
+        if role == "camera_info":
+            return self._camera_info_j(j)
+        if role == "tf_message":
+            return np.asarray(s.read(j))
+        return s.read(j)
+
+    def _row_at(self, role, j, cols, with_time=True):
+        s = self.streams[role]
+        k = s._g["data"].shape[1] if "data" in s._g else 0
+        cols = list(range(k)) if cols is None else list(cols)
+        data = np.asarray(s._g["data"][j])[cols][None, :]
+        if not with_time:
+            return data
+        return np.c_[[[self._t[role][j] * 1e-9]], data]
+
+    def interp(self, role, t_ns, max_gap_ns=None):
+        """Value of a continuous stream at time ``t_ns``, interpolated.
+
+        ``role``: ``vehicle_odom``, ``vehicle_vel``, ``imu``, ``vector3`` or a
+        vicon stream name. Returns the stored columns in stored order
+        (odometry ``x y z qx qy qz qw vx vy vz wx wy wz``; no time column):
+        linear on every column, spherical (slerp) on the quaternion. ``t_ns``
+        is an int ns on the chosen clock; a scalar gives ``(k,)``, an array
+        ``(n, k)``. The result is **NaN** (never clamped) for a time before
+        the first or after the last sample, and where the two bracketing
+        samples are further apart than ``max_gap_ns`` (default 3x the stream's
+        median sample period; pass a larger value to bridge gaps). A time that
+        equals a sample's stamp returns that sample exactly. Positions are
+        interpolated; twist and other columns are interpolated like positions,
+        not integrated."""
+        s = self._stream(role)
+        if s.type not in INTERP_QUAT:
+            raise ValueError("interp: %s is a %s stream; supported: %s"
+                             % (role, s.type, ", ".join(sorted(INTERP_QUAT))))
+        t = np.asarray(t_ns)
+        scalar = t.ndim == 0
+        t = np.rint(t).astype(np.int64) if t.dtype.kind == "f" else t.astype(np.int64)
+        t = np.atleast_1d(t)
+        ts, d = self._sorted[role], self._sorted_data(role)
+        n, k = len(ts), d.shape[1]
+        out = np.full((len(t), k), np.nan)
+        if n:
+            if max_gap_ns is None:
+                max_gap_ns = 3 * float(np.median(np.diff(ts))) if n > 1 else 0.0
+            a = np.searchsorted(ts, t, side="right") - 1
+            ac = np.clip(a, 0, n - 1)
+            exact = (a >= 0) & (ts[ac] == t)
+            out[exact] = d[ac[exact]]
+            mid = (a >= 0) & ~exact & (a < n - 1)
+            rows = np.flatnonzero(mid)
+            ia = a[rows]
+            gap = ts[ia + 1] - ts[ia]
+            keep = gap <= max_gap_ns
+            rows, ia, gap = rows[keep], ia[keep], gap[keep]
+            if len(rows):
+                u = ((t[rows] - ts[ia]) / gap)[:, None]
+                res = d[ia] * (1 - u) + d[ia + 1] * u
+                q = INTERP_QUAT[s.type]
+                if q is not None:
+                    res[:, q[0]:q[1]] = _slerp(d[ia, q[0]:q[1]], d[ia + 1, q[0]:q[1]], u)
+                out[rows] = res
+        return out[0] if scalar else out
+
+    def _sorted_data(self, role):
+        if role not in self._data_cache:
+            s = self.streams[role]
+            if "data" in s._g:
+                d = np.asarray(s._g["data"][:], np.float64)
+            else:
+                d = np.zeros((0, len(s.columns)))
+            self._data_cache[role] = d[self._order[role]]
+        return self._data_cache[role]
 
     # --- getters ------------------------------------------------------------
     def get_stamps(self, role):
@@ -387,8 +622,12 @@ class CpslDS:
     def _cloud(self, role, idx, full=False):
         """(points, column names) of a cloud role, frame applied; ``full`` keeps
         every stored column."""
+        self._stream(role)
+        return self._cloud_j(role, self.sample_index(role, idx), full)
+
+    def _cloud_j(self, role, j, full=False):
+        """``_cloud`` for raw sample ``j`` (-1 = empty)."""
         s = self._stream(role)
-        j = self.sample_index(role, idx)
         cols = list(s.columns)
         want = ROLES[role][2]
         sel = None if full else [cols.index(c) for c in want] if all(c in cols for c in want) else None
@@ -554,7 +793,9 @@ class CpslDS:
     def _hand(self, idx, hand):
         role = self._hand_role(hand)
         self._stream(role)
-        j = self.sample_index(role, idx)
+        return self._hand_pts(role, self.sample_index(role, idx))
+
+    def _hand_pts(self, role, j):
         pts = np.asarray(self.streams[role].read(j)) if j >= 0 else np.empty((0, 3))
         if not len(pts):
             return np.zeros((N_HAND_POINTS, 3)), False
@@ -630,10 +871,11 @@ class CpslDS:
         (the recorded distortion coefficients, NaN padding trimmed),
         ``distortion_model``, ``frame_id``; None when there is none yet."""
         self._stream("camera_info")
-        s = self.streams["camera_info"]
         j = self.sample_index("camera_info", idx)
-        if j < 0:
-            return None
+        return None if j < 0 else self._camera_info_j(j)
+
+    def _camera_info_j(self, j):
+        s = self.streams["camera_info"]
         row = np.asarray(s._g["data"][j], np.float64)
         c = {n: k for k, n in enumerate(s.columns)}
         d = row[[c["D%d" % k] for k in range(14) if "D%d" % k in c]]
