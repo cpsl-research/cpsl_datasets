@@ -41,28 +41,9 @@ def test_no_geometries_import():
     assert not any("geometries" in m for m in mods)
 
 
-def test_range_doppler_bins_and_metres(tmp_path):
-    ds = CpslDS(build(tmp_path / "v4.h5", "v4"), radar_adc="radar_adc")
-    pl = CpslPlotter(ds)
-    mag, rng, vel = pl.range_doppler(0)
-    cube = ds.get_radar_adc_data(0)
-    assert mag.shape == (cube.shape[2], len(rng)) and len(vel) == cube.shape[2]
-    # synth metrics carry range_res_m=0.05 but no velocity_res_ms
-    assert rng[1] == pytest.approx(0.05)
-    assert vel[1] - vel[0] == 1.0
-    fig, ax = plt.subplots()
-    pl.plot_range_doppler(0, ax=ax)
-    assert "range (m)" in ax.get_xlabel() and "Doppler bin" in ax.get_ylabel()
-    saved(fig, tmp_path, "rd.png")
-
-
-def test_range_doppler_empty_raises(tmp_path):
-    ds = CpslDS(mixed(tmp_path / "m.h5"), reference="vehicle_odom")
-    # odom row 0 precedes the first ADC sample, so the synced cube is empty
-    if ds.get_radar_adc_data(0).size:
-        pytest.skip("fixture has an ADC sample at odom row 0")
-    with pytest.raises(ValueError):
-        CpslPlotter(ds).range_doppler(0)
+def test_no_range_doppler():
+    assert not hasattr(CpslPlotter, "range_doppler")
+    assert not hasattr(CpslPlotter, "plot_range_doppler")
 
 
 def test_odom_trajectory(tmp_path):

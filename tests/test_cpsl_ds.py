@@ -348,3 +348,14 @@ def test_ambiguous_multi_radar_raises_then_name_resolves(tmp_path):
         assert ds.get_radar_point_cloud(0).shape == (2, 4)
     with CpslDS(p, radar_pc=False) as ds:
         assert "radar_pc" not in ds.roles
+
+
+def test_radar_cfg_none_when_not_ok(v4, tmp_path):
+    """Same 'absent' value on every capture: no cfg, or a status other than ok."""
+    with h5py.File(v4, "r+") as f:
+        f["radar_adc"].attrs["radar_cfg_status"] = "not_received"
+    with CpslDS(v4, radar_adc="radar_adc") as ds:
+        assert ds.get_radar_cfg() is None
+    from synth_h5 import build_human_movement
+    with CpslDS(build_human_movement(tmp_path / "hm.h5")) as ds:
+        assert ds.get_radar_cfg() is None

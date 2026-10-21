@@ -126,7 +126,10 @@ class CpslDS:
       Unsynced: row ``idx`` as ``(1, 14)``.
     - ``get_stamps(role)``: int64 ns of the role's whole stream, chosen clock.
     - ``get_radar_cfg()``: the cube's parsed ``radar_cfg_*`` attrs (format
-      v3+; ``metrics`` decoded) or None.
+      v3+; ``metrics`` decoded), or None on every capture where no cfg was
+      recorded (v2, converted v1 data, status other than ``ok``). The reader
+      returns the raw ADC cube and this cfg as stored; it does no radar signal
+      processing (range-Doppler etc. lives in radar_gui / CPSL_TI_Radar).
     - ``get_transform(target, source, idx=None, t_ns=None)``: 4x4
       ``T_target_source`` over ``/tf_static`` and the tracked ``/tf`` pairs
       (v4). A tracked edge is interpolated at ``t_ns``, or at the reference
@@ -277,7 +280,10 @@ class CpslDS:
 
     def get_radar_cfg(self):
         s = self.streams.get("radar_adc")
-        return self.capture.radar_cfg(s.name if s is not None else None)
+        cfg = self.capture.radar_cfg(s.name if s is not None else None)
+        if not cfg or cfg.get("status") != "ok":
+            return None
+        return cfg
 
     def get_radar_adc_data(self, idx):
         j = self.sample_index("radar_adc", idx)

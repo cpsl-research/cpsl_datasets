@@ -3,6 +3,8 @@
 Clouds are drawn x (horizontal) against y (vertical) in whatever frame the
 dataset returns them (the sensor frame by default, see ``CpslDS`` ``frame=``).
 v1 additionally rotated clouds by 90 degrees for display; that is not done here.
+Radar signal processing (range-Doppler, etc.) is not done here or in ``CpslDS``;
+see radar_gui / CPSL_TI_Radar.
 """
 import matplotlib.pyplot as plt
 import numpy as np
@@ -83,50 +85,6 @@ class CpslPlotter:
             ax.imshow(img, cmap="gray" if enc.startswith(("mono", "8uc1")) else "viridis")
         else:
             ax.imshow(img)
-        self._finish(show)
-
-    # --- radar ADC -------------------------------------------------------
-    def range_doppler(self, sample_idx):
-        """(magnitude [doppler, range], range axis, velocity axis) of one cube.
-
-        Range FFT over samples (positive half), Doppler FFT over chirps
-        (fftshifted), magnitude summed over rx. Axes are in metres and m/s when
-        ``radar_cfg_metrics`` has ``range_res_m`` / ``velocity_res_ms``, else
-        bin indices (Doppler centred on zero). Raises ValueError for an empty cube.
-        """
-        cube = np.asarray(self.dataset.get_radar_adc_data(idx=sample_idx))
-        if cube.size == 0:
-            raise ValueError("no ADC cube at index %r" % (sample_idx,))
-        if cube.ndim == 2:
-            cube = cube[None]
-        n_s, n_c = cube.shape[1], cube.shape[2]
-        rd = np.fft.fftshift(np.fft.fft(np.fft.fft(cube, axis=1), axis=2), axes=2)
-        mag = np.abs(rd[:, : n_s // 2 + n_s % 2, :]).sum(axis=0)  # (range, doppler)
-        rng = np.arange(mag.shape[0], dtype=float)
-        vel = np.arange(n_c, dtype=float) - n_c // 2
-        cfg = self.dataset.get_radar_cfg() or {}
-        m = cfg.get("metrics") if isinstance(cfg, dict) else None
-        m = m if isinstance(m, dict) else {}
-        self._rd_units = ("range bin", "Doppler bin")
-        if m.get("range_res_m"):
-            rng = rng * float(m["range_res_m"])
-            self._rd_units = ("range (m)", self._rd_units[1])
-        if m.get("velocity_res_ms"):
-            vel = vel * float(m["velocity_res_ms"])
-            self._rd_units = (self._rd_units[0], "velocity (m/s)")
-        return mag.T, rng, vel
-
-    def plot_range_doppler(self, sample_idx, ax=None, show=False, log=True):
-        ax = self._ax(ax)
-        mag, rng, vel = self.range_doppler(sample_idx)
-        z = 20 * np.log10(mag + 1e-9) if log else mag
-        ax.imshow(z, origin="lower", aspect="auto", cmap="viridis",
-                  extent=[rng[0], rng[-1] if len(rng) > 1 else rng[0] + 1,
-                          vel[0], vel[-1] if len(vel) > 1 else vel[0] + 1])
-        ax.set_xlabel(self._rd_units[0], fontsize=self.font_size_axis_labels)
-        ax.set_ylabel(self._rd_units[1], fontsize=self.font_size_axis_labels)
-        ax.set_title("Range-Doppler magnitude" + (" (dB)" if log else ""),
-                     fontsize=self.font_size_title)
         self._finish(show)
 
     # --- trajectories ----------------------------------------------------
