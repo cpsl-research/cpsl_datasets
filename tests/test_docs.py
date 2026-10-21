@@ -6,7 +6,7 @@ import matplotlib
 import pytest
 
 matplotlib.use("Agg")
-from synth_h5 import build, build_getters, build_human_movement, build_multi_radar  # noqa: E402
+from synth_h5 import build, build_all, build_getters, build_human_movement, build_multi_radar  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 BUILDERS = {
@@ -14,6 +14,7 @@ BUILDERS = {
     "getters": build_getters,
     "human": build_human_movement,
     "multi": build_multi_radar,
+    "all": build_all,
 }
 PAGES = sorted((ROOT / "docs").glob("*.md"))
 FENCE = re.compile(r"```python\n(.*?)```", re.S)

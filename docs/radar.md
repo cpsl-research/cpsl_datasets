@@ -13,8 +13,8 @@ measured on another.
 
 Stored: an `ADCDataCube` stream. `data` is `int16`, `(N, 2, rx, sample, chirp)`; the `2` is
 real and imaginary. `get_radar_adc_data(idx)` returns `complex64` `(rx, sample, chirp)`, i.e.
-`d[0] + 1j * d[1]` in raw ADC counts, no scaling. Cube sizes differ per file (the
-`radar06` cube is `(1, 3300, 255)`; two converted files are `(4, 70, 120)` and `(4, 63, 300)`).
+`d[0] + 1j * d[1]`. The values are the raw `int16` ADC counts held in a `complex64`: no scaling, no
+volts, no windowing. Cube sizes differ per file (`radar06`: `(1, 3300, 255)`; converted files: `(4, 70, 120)`, `(4, 63, 300)`).
 Read the group's `axes` attribute to see the stored axis order instead of assuming it.
 
 ```mermaid
@@ -25,7 +25,7 @@ flowchart LR
     G --> S2["cube[:, :, :16]<br/>first 16 chirps"]
 ```
 
-*Figure 2. Cube axes and slicing.*
+*Figure 3. Cube axes and slicing.*
 
 ```python
 # synth: v4
@@ -65,10 +65,6 @@ if cfg is not None:
     print((m["n_rx"], m["num_samples"], m["n_chirps"]) == cube.shape)   # cube matches cfg
 ```
 
-On `radar06`, `metrics` gives 1 receiver, 3300 samples, 255 chirps, a 510.3 ms frame period,
-3499.5 MHz bandwidth, 0.0428 m range resolution and TDM scheme, and the cube shape equals
-`(n_rx, num_samples, n_chirps)`.
-
 ## Chirp metadata
 
 Newer recorders store an `adc_meta` stream (`ADCChirpMeta`) beside the cube, one sample per
@@ -94,7 +90,7 @@ Stored: a ragged `PointCloud2` stream with a `vel` column. `get_radar_point_clou
 `(n, 4)` x y z vel (metres, m/s), `float32` on real files; empty `(0, K)` when there are no
 detections. Points are in the sensor frame (`frame_id`) unless you open the file with
 `frame="base_link"`, which maps x y z through `/tf_static` (v4 files only). With several
-radars, name one: `radar_pc="radar_combined_pc"`, or set `CPSL_STREAMS` as in the README.
+radars, name one: `radar_pc="radar_combined_pc"`.
 
 ```python
 # synth: v4
@@ -123,8 +119,7 @@ On `radar06` the radar's recv stamp is later than its header stamp by a large, j
 | `radar_adc` | 112.1 ms | 4.9 ms | 104.8 ms | 126.3 ms |
 | `adc_meta` | 104.4 ms | 1.5 ms | 102.7 ms | 108.4 ms |
 
-This is one sensor on one capture; it has not been repeated on other radars. With `clock="header"` the radar frames therefore line up ~100 ms earlier against recv-stamped
-streams. For one query time on `radar06` the two clocks picked adjacent samples (19 versus 20).
+With `clock="header"` radar frames line up ~100 ms earlier against recv-stamped streams.
 
 ```python
 # synth: v4
@@ -138,28 +133,43 @@ print(ds.get_stamps("radar_adc")[:3])                      # int64 ns, chosen cl
 
 ![Timing: stamp axes, radar offset and odometry window](figures/radar_timing.png)
 
-*Figure 3. Schematic: header and recv stamps of a radar, an odometry stream on recv stamps,
+*Figure 4. Schematic: header and recv stamps of a radar, an odometry stream on recv stamps,
 the reference stamp and the odometry window. Spacing is illustrative; the ~112 ms offset is
 `radar06`.*
 
 **Frame-synced getters.** Frame `idx` is the idx-th radar cube. Cube, point cloud, camera and
 lidar getters return the newest sample at or before that cube's stamp (ties go to the later
 row); odometry, velocity, IMU, Vector3 and Vicon return the window
-`(t_ref[idx-1], t_ref[idx]]` (for `idx` 0, everything up to `t_ref[0]`). `ds.sample_index(role,
-idx)` tells which raw sample was served.
+`(t_ref[idx-1], t_ref[idx]]`. Switch the clock, matching and reference as in
+[index.md](index.md#open-it); `clock="header"` fails on converted v1 files (no header stamps).
 
-**Header clock.** `clock="header"` raises `ValueError` if any bound stream has header stamps of
-`-1`. That is the case for every converted v1 file (`inspect` says "header stamps are -1"),
-and `/tf` messages have no header stamp, so also pass `tf_message=False`.
+**Worked example: a rover capture (`all`).** One rover recording holds `radar_adc` (101 cubes,
+4 Hz), `adc_meta`, `odometry` (15 Hz) and the tracked `odom` to `base_link` edge. On the
+default recv clock `adc_meta` arrives about 3 ms *after* its cube, so it is not yet "at or
+before" the cube's stamp: for 62 of the 101 frames `ds.match("chirp_meta", i)` serves the
+**previous** frame's meta (`dt` about -251 ms, one cube period). `clock="header"` fixes it: the
+two share a header stamp and `dt` is 0 for every frame. Odometry `dt` was -68 to -3 ms on recv. `interp` of odometry at the radar stamps gives a pose for 100 of 101 frames; the last
+cube is stamped after the final odometry row, so it is NaN.
 
 ```python
-# synth: v4
+# synth: all
 from cpsl_datasets import CpslDS
+import numpy as np
 
-ds = CpslDS("capture.h5", radar_adc="radar_adc", clock="header", tf_message=False,
-            vehicle_vel=False)
-print(len(ds), ds.get_radar_adc_data(0).shape)
+for clock in ("recv", "header"):
+    ds = CpslDS("capture.h5", clock=clock, tf_message=False)
+    dts = [ds.match("chirp_meta", i).dt_ns for i in range(len(ds))]
+    stale = sum(d < -1e8 for d in dts if d is not None)
+    pose = ds.interp("vehicle_odom", ds.get_stamps("radar_adc"))
+    print(clock, "meta from the previous frame:", stale, "of", len(ds),
+          "| frames with no pose:", int(np.isnan(pose).any(axis=1).sum()))
 ```
+
+**Deprecated.** `get_radar_data(idx)` is the v1 getter (point cloud if one is bound, else the
+cube) and warns; use `get_radar_adc_data` or `get_radar_point_cloud`. Outside the notebook,
+name streams as keyword arguments (`radar_pc="radar_pc_1"`). `CPSL_STREAMS` (a JSON role to
+stream map) is read only by `notebooks/dataset_viewer.ipynb`; in your own script use
+`CpslDS(path, **json.loads(os.getenv("CPSL_STREAMS", "{}")))`.
 
 ## Appendix: radar `metrics` keys
 

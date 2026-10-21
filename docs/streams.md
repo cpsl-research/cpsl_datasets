@@ -21,6 +21,8 @@ a file in [index.md](index.md). Snippets assume
 Stored: a ragged `PointCloud2` stream with no `vel` column, all columns kept. IcaRAus-style
 captures hold `float32` rows of x y z intensity (an `(19968, 4)` cloud on the converted real
 file). An Ouster cloud has nine fields: x y z intensity t reflectivity ring ambient range.
+**Intensity has no stated unit**: it is stored as the driver published it, and neither this
+package nor the Sensors format spec defines it. Treat it as a relative, sensor-specific value.
 
 ```python
 # synth: getters
@@ -40,9 +42,7 @@ plt.show()
 `CpslDS` to map x y z through `/tf_static` (v4 files only; otherwise `ValueError`).
 
 **Ouster.** Reader side only: all nine columns come back through `get_point_cloud_columns`
-(checked on a synthetic cloud). The Sensors repo has no Ouster recorder config yet (console memo
-`docs/research/2026-10-21-sensor-capture-gaps-ouster-vicon-leap.md`), so no real Ouster file
-is expected to exist.
+(checked on a synthetic cloud); no real Ouster file is expected to exist yet.
 
 ## Camera and depth
 
@@ -156,8 +156,7 @@ plt.show()
 
 **v1 hands.** Hands in converted v1 datasets are also raw Leap coordinates, whatever the
 `frame_id` says (older converted files were stamped `base_link`, wrongly). The console memo
-above found no code that moved v1 hands to the base frame (one old script read; not checked
-against published v1 files). Note: Sensors [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
+above found no code that moved v1 hands to the base frame. Sensors [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
 (line 172) says v1 hands were in the base frame. That conflicts with the memo; treat v1 hands
 as raw Leap until someone checks.
 
