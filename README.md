@@ -120,6 +120,19 @@ Prints the streams (type, samples, frame_id, time span) and a clock report: the 
 header offset per stream, or that a stream has no header stamps. `--validate` also checks the
 file against `hdf5_format.md` and prints each problem, or `validate: no problems`.
 
+## API reference
+
+A generated reference (every `CpslDS` kwarg with its default, all getters, `Capture`,
+`Stream`, `inspect`, `convert_v1`) is built from the docstrings with
+[pdoc](https://pdoc.dev) (a dev dependency); the output in `docs/api/` is not committed:
+
+```
+uv run pdoc --docformat numpy -o docs/api cpsl_datasets.cpsl_ds cpsl_datasets.hdf5 \
+    cpsl_datasets.inspect cpsl_datasets.convert_v1
+```
+
+Open `docs/api/index.html`.
+
 ## Viewer notebook
 
 `notebooks/dataset_viewer.ipynb` runs `inspect`, opens the file with `CpslDS` and plots

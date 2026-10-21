@@ -228,7 +228,9 @@ class Capture:
         return out
 
     def static_chain(self, frame, up_to):
+        """Composed static transform from ``frame`` up to ``up_to`` over ``/tf_static``."""
         return _tf.static_chain(self._f, frame, up_to)
 
     def pose_at(self, parent, child, t_ns, interpolate=True):
+        """Pose of a tracked ``/tf`` edge ``parent`` -> ``child`` at ``t_ns``."""
         return _tf.pose_at(self.tf_pairs()[(parent, child)], t_ns, interpolate)

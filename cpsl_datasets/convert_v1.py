@@ -376,7 +376,40 @@ def refuse_unsafe(v1_dir, out, force):
 
 def convert(v1_dir, out, overrides=None, base_frame="base_link", frame_rate=10.0,
             compression=None, force=False, log=print, hands_frame=HANDS_FRAME):
-    """Convert; return ``{"streams": {name: n}, "skipped": [...], "problems": None}``."""
+    """Convert a v1 folder-of-``frame_N.npy`` dataset to a ``cpsl_dataset_hdf5`` v4 file.
+
+    Command line: ``python -m cpsl_datasets.convert_v1 V1_DIR OUT.h5 [--base-frame F]
+    [--frame-rate HZ] [--map folder=type] [--hands-frame F] [--compression gzip|lzf]
+    [--force]``. The v1 folder is only read.
+
+    Parameters
+    ----------
+    v1_dir : str or Path
+        The v1 dataset folder.
+    out : str or Path
+        Output ``.h5``; must not be inside ``v1_dir``.
+    overrides : dict or None, default None
+        ``{folder: type}`` forcing the type of an unrecognised folder
+        (``"skip"`` drops it).
+    base_frame : str, default "base_link"
+        ``frame_id`` stamped on clouds, IMU and velocity.
+    frame_rate : float, default 10.0
+        Frame rate used to synthesise stamps (``k / frame_rate``) where v1
+        stored none; also written as the root ``sample_rate_hz``.
+    compression : {"gzip", "lzf"} or None, default None
+        HDF5 compression of the output.
+    force : bool, default False
+        Overwrite an existing ``out``.
+    log : callable, default print
+        Receives progress messages.
+    hands_frame : str, default "cpsl_human_movement/leap_link"
+        ``frame_id`` of hand streams.
+
+    Returns
+    -------
+    dict
+        ``{"streams": {name: n}, "skipped": [...], "problems": None}``.
+    """
     v1_dir = Path(v1_dir)
     if not v1_dir.is_dir():
         raise ConvertError("source %s is not a directory" % v1_dir)
@@ -430,6 +463,7 @@ def convert(v1_dir, out, overrides=None, base_frame="base_link", frame_rate=10.0
 
 
 def main(argv=None):
+    """Command line entry: ``python -m cpsl_datasets.convert_v1`` (see ``convert``)."""
     ap = argparse.ArgumentParser(
         prog="python -m cpsl_datasets.convert_v1",
         description="Convert a v1 folder-of-frame_N.npy dataset to cpsl_dataset_hdf5 v4 "

@@ -253,6 +253,74 @@ class CpslDS:
                  camera_depth=None, leap_left=None, leap_right=None,
                  camera_info=None, chirp_meta=None, vector3=None, tf_message=None,
                  vicon=None, match="previous"):
+        """Open the capture at ``dataset_path`` and bind its streams to roles.
+
+        Parameters
+        ----------
+        dataset_path : str or Path
+            The ``.h5`` capture. Opened read-only.
+        radar_adc : str, False or None, default None
+            Stream name for the raw ADC cube role. ``None`` auto-detects,
+            ``False`` / ``""`` switches the role off. The same holds for every
+            role kwarg below up to ``tf_message`` and ``vicon``.
+        radar_pc : str, False or None, default None
+            Radar point-cloud stream (PointCloud2 with a ``vel`` column).
+        lidar : str, False or None, default None
+            Lidar point-cloud stream.
+        camera : str, False or None, default None
+            Colour image stream.
+        vehicle_odom : str, False or None, default None
+            Odometry stream.
+        hand_left, hand_right : str, False or None, default None
+            Leap hand-tracking clouds (``(21, 3)`` per sample).
+        hand : str, False or None, default None
+            A single other hand cloud (v1-style one-hand stream).
+        reference : str or None, default None
+            **Selects the reference stream**: a role name such as
+            ``"radar_adc"``, ``"lidar"`` or ``"vehicle_odom"``. ``idx`` counts
+            its samples, ``num_frames`` is its length, and every other role is
+            aligned to it. ``None`` takes the first non-empty of radar_adc,
+            radar_pc, lidar, camera.
+        sync : bool, default True
+            ``True``: ``idx`` is a reference-stream index and other roles are
+            aligned to it. ``False``: ``idx`` is the role's own raw index.
+        clock : {"recv", "header"}, default "recv"
+            ``"recv"`` aligns on ``stamp_recv_ns`` (the recording host's
+            clock, shared by all streams); ``"header"`` on ``stamp_header_ns``
+            (only meaningful when the drivers share a clock).
+        frame : str or None, default None
+            ``None``: point clouds in their stored sensor frame. A frame name
+            (e.g. ``"base_link"``) maps radar_pc and lidar x, y, z into it via
+            ``/tf_static`` (format v4 only).
+        vehicle_vel : str, False or None, default None
+            Velocity stream (falls back to the odometry stream).
+        imu : str, False or None, default None
+            IMU stream.
+        camera_depth : str, False or None, default None
+            Depth image stream.
+        leap_left, leap_right : str, False or None, default None
+            Leap Motion image streams.
+        camera_info : str, False or None, default None
+            CameraInfo stream.
+        chirp_meta : str, False or None, default None
+            Per-frame radar chirp metadata stream.
+        vector3 : str, False or None, default None
+            Vector3 stream.
+        tf_message : str, False or None, default None
+            Recorded ``/tf`` message stream.
+        vicon : str, list, False or None, default None
+            Vicon pose stream name(s) (``vicon_<segment>``).
+        match : {"previous", "nearest"}, default "previous"
+            Which sample of a non-reference stream is served for a reference
+            sample: the newest at or before it, or the closest in time either
+            side. Row-window getters keep their window either way.
+
+        Raises
+        ------
+        ValueError
+            Unknown ``clock`` / ``match``, an ambiguous auto-detect (several
+            radars or lidars), or ``frame=`` without a usable ``/tf_static``.
+        """
         if clock not in ("recv", "header"):
             raise ValueError("clock must be 'recv' or 'header', got %r" % (clock,))
         if match not in MATCH_METHODS:
@@ -603,10 +671,15 @@ class CpslDS:
 
     # --- getters ------------------------------------------------------------
     def get_stamps(self, role):
+        """int64 ns stamps of the whole ``role`` stream on the chosen clock
+        (``stamps[sample_index(role, idx)]`` is the time of the sample served)."""
         self._stream(role)
         return self._t[role].copy()
 
     def get_radar_cfg(self):
+        """Parsed ``radar_cfg_*`` attrs of the ADC cube (dict, ``metrics``
+        decoded), or None when no cfg was recorded (v2, converted v1, status
+        other than ``ok``). Returned as stored; no radar processing."""
         s = self.streams.get("radar_adc")
         cfg = self.capture.radar_cfg(s.name if s is not None else None)
         if not cfg or cfg.get("status") != "ok":
@@ -614,6 +687,8 @@ class CpslDS:
         return cfg
 
     def get_radar_adc_data(self, idx):
+        """Raw ADC cube of frame ``idx``: complex64 ``(rx, sample, chirp)`` from
+        the stored int16 counts; empty ``(0, 0, 0)`` when no sample yet."""
         j = self.sample_index("radar_adc", idx)
         if j < 0:
             return np.empty((0, 0, 0), np.complex64)
@@ -644,12 +719,18 @@ class CpslDS:
         return (pts[:, sel] if sel is not None else pts), out_cols
 
     def get_radar_point_cloud(self, idx):
+        """Radar points of frame ``idx``: ``(n, 4)`` x y z vel (all stored
+        columns if those are absent); empty ``(0, K)``. ``frame=`` applies."""
         return self._cloud("radar_pc", idx)[0]
 
     def get_lidar_point_cloud_raw(self, idx):
+        """Lidar points of frame ``idx``: ``(n, 4)`` x y z intensity (all stored
+        columns if absent), uncut. ``frame=`` applies."""
         return self._cloud("lidar", idx)[0]
 
     def get_lidar_point_cloud(self, idx):
+        """Lidar x, y ``(n, 2)`` of the points with -0.2 < z < 0.1 (v1's
+        ground/ceiling cut), in the returned frame."""
         pts, cols = self._cloud("lidar", idx)
         if not all(c in cols for c in ("x", "y", "z")):
             raise ValueError("lidar stream has no x y z columns: %s" % cols)
@@ -659,10 +740,13 @@ class CpslDS:
 
     @property
     def camera_encoding(self):
+        """Encoding of the camera stream (e.g. ``"rgb8"``), or None."""
         s = self.streams.get("camera")
         return _enc(s) if s is not None else None
 
     def get_camera_frame(self, idx):
+        """Camera image of frame ``idx`` as stored, ``(H, W[, C])`` in
+        ``camera_encoding``; empty ``(0, 0, 0)`` when no sample yet."""
         j = self.sample_index("camera", idx)
         if j < 0:
             return np.empty((0, 0, 0), np.uint8)
@@ -701,6 +785,9 @@ class CpslDS:
         return np.c_[self._t[role][rows] * 1e-9, data]
 
     def get_vehicle_odom_data(self, idx=0):
+        """``(m, 14)``: time in seconds, then ``x y z qx qy qz qw vx vy vz wx wy
+        wz``, for the odometry rows in the frame's window ``(t_ref[idx-1],
+        t_ref[idx]]``. Use ``row_stamps`` for the int ns stamps."""
         return self._rows("vehicle_odom", idx)
 
     def get_vehicle_vel_data(self, idx=0):

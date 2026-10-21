@@ -67,6 +67,9 @@ def _mode_lines(c, streams):
 
 
 def report(path, out=print):
+    """Print the summary of ``path`` through ``out``: format, capture_mode and
+    sample_rate_hz, each stream (type, mode, samples, fill ratio, frame_id, time
+    span), the clock report, and the radar cfg."""
     with Capture(path) as c:
         out("file: %s" % path)
         out("format: %s  version: %d  closed_cleanly: %s" % (c.format, c.version, c.closed_cleanly))
@@ -98,6 +101,7 @@ def report(path, out=print):
 
 
 def main(argv=None):
+    """Command line entry: ``python -m cpsl_datasets.inspect FILE [--validate]``."""
     ap = argparse.ArgumentParser(prog="python -m cpsl_datasets.inspect", description=__doc__)
     ap.add_argument("file")
     ap.add_argument("--validate", action="store_true", help="also check the file against hdf5_format.md")
