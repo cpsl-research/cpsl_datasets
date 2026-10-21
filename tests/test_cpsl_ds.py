@@ -74,7 +74,13 @@ def test_autodetect_clash_raises(v4):
 def test_autodetect_roles(v4):
     with CpslDS(v4, radar_adc="radar_adc") as ds:
         assert ds.roles == {"radar_adc": "radar_adc", "radar_pc": "radar_pc",
-                            "camera": "cam_rgb", "vehicle_odom": "odom"}
+                            "camera": "cam_rgb", "vehicle_odom": "odom", "imu": "imu",
+                            "camera_info": "cam_info", "chirp_meta": "adc_meta",
+                            "vector3": "vec3", "tf_message": "tfmsg",
+                            "tstamped": "tstamped"}
+        # cmd_vel and twist_st are both Twist-like: reported when asked for, not here
+        with pytest.raises(ValueError, match="vehicle_vel=<name>"):
+            ds.get_vehicle_vel_data(0)
         assert ds.reference == "radar_adc" and ds.num_frames == 3
         with pytest.raises(ValueError, match="no lidar"):
             ds.get_lidar_point_cloud(0)
@@ -91,7 +97,7 @@ def test_role_off_and_unknown_name(v4):
 def test_mixed_autodetect_lidar_vs_radar_pc(tmp_path):
     with CpslDS(mixed(tmp_path / "m.h5")) as ds:
         assert ds.roles == {"radar_adc": "adc", "lidar": "os", "camera": "cam",
-                            "vehicle_odom": "vehicle"}
+                            "vehicle_odom": "vehicle", "vehicle_vel": "vehicle"}
 
 
 # --- sync on / off ----------------------------------------------------------

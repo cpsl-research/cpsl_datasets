@@ -214,3 +214,70 @@ def build_multi_radar(path):
            attrs={"frame_id": "lidar"}, ragged=[4, 4, 4])
     b.close()
     return path
+
+
+def build_getters(path):
+    """Capture for the secondary getters: radar cube (reference, 4 @100 ms), an
+    Ouster-style organized lidar (extra columns, a NaN and a zero point), two
+    Vicon segments @ 20 ms with known quaternions, IMU / Twist / Odometry @ 20 ms,
+    Leap hands + images, a depth image, CameraInfo, a TFMessage."""
+    b = Builder(path, 4)
+    rng, n = b.rng, 4
+    b.stream("radar_adc", "raw_radar_msgs/msg/ADCDataCube", n,
+             attrs={"columns": ["real", "imag"], "frame_id": "radar"},
+             fields={"data": rng.integers(-9, 9, (n, 2, 2, 4, 3)).astype(np.int16)})
+    ocols = ["x", "y", "z", "intensity", "t", "reflectivity", "ring", "ambient", "range"]
+    pts = rng.normal(size=(3 * n, len(ocols))).astype(np.float32) + 1.0
+    pts[1, :3] = np.nan          # frame 0, point 1: NaN
+    pts[2, :3] = 0.0             # frame 0, point 2: all-zero
+    b.stream("lidar", "sensor_msgs/msg/PointCloud2", n,
+             attrs={"columns": ocols, "frame_id": "os_sensor"},
+             fields={"data": pts}, ragged=[3] * n)
+    m, rate = 20, 20_000_000
+    for name, off in (("vicon_a", 0.0), ("vicon_b", 10.0)):
+        d = np.zeros((m, 7))
+        d[:, :3] = off + np.arange(m)[:, None] * [1.0, 2.0, 3.0]
+        d[:, 3:] = QUATS[np.arange(m) % len(QUATS)]
+        b.stream(name, "geometry_msgs/msg/TransformStamped", m, rate_ns=rate,
+                 attrs={"columns": "x y z qx qy qz qw".split(), "frame_id": "vicon_world",
+                        "child_frame_id": "seg_" + name[-1]}, fields={"data": d})
+    imu = np.zeros((m, 10))
+    imu[:, :4] = [0, 0, np.sin(0.3), np.cos(0.3)]  # yaw 0.6
+    imu[:, 4:] = np.arange(m)[:, None] + np.arange(6) * 0.1
+    b.stream("imu", "sensor_msgs/msg/Imu", m, rate_ns=rate,
+             attrs={"columns": "qx qy qz qw wx wy wz ax ay az".split(), "frame_id": "imu"},
+             fields={"data": imu})
+    vel = np.arange(m * 6, dtype=float).reshape(m, 6)
+    b.stream("vehicle_vel", "geometry_msgs/msg/Twist", m, rate_ns=rate, header=False,
+             attrs={"columns": "vx vy vz wx wy wz".split()}, fields={"data": vel})
+    b.stream("cmd_vel", "geometry_msgs/msg/Twist", m, rate_ns=rate, header=False,
+             attrs={"columns": "vx vy vz wx wy wz".split()}, fields={"data": vel * 0})
+    b.rows("vec3", "geometry_msgs/msg/Vector3Stamped", m, ["x", "y", "z"])
+    for name in ("hand_left", "hand_right"):
+        g = b.rows(name, "sensor_msgs/msg/PointCloud2", n, ["x", "y", "z"],
+                   attrs={"frame_id": "cpsl_human_movement/leap_link"}, ragged=[21] * n)
+        if name == "hand_left":
+            d = g["data"][:]
+            d[21:42] = 0.0  # absent in sample 1
+            g["data"][...] = d
+    for name in ("leap_left", "leap_right"):
+        b.stream(name, "sensor_msgs/msg/Image", n,
+                 attrs={"encoding": "mono8", "frame_id": "cpsl_human_movement/leap_camera_frame"},
+                 fields={"data": rng.integers(0, 255, (n, 4, 6)).astype(np.uint8)})
+    b.stream("camera_depth", "sensor_msgs/msg/Image", n,
+             attrs={"encoding": "mono16", "frame_id": "camera"},
+             fields={"data": rng.integers(0, 4000, (n, 5, 6)).astype(np.uint16)})
+    ci = rng.normal(size=(n, 46))
+    ci[:, 37:] = np.nan
+    b.stream("cam_info", "sensor_msgs/msg/CameraInfo", n,
+             attrs={"columns": CAMINFO_COLS, "frame_id": "camera",
+                    "distortion_model": "plumb_bob"}, fields={"data": ci})
+    b.rows("tfmsg", "tf2_msgs/msg/TFMessage", 2, "x y z qx qy qz qw".split(),
+           header=False, ragged=[2, 3])
+    b.close()
+    return path
+
+
+_q = np.array([[0.1, 0.2, 0.3, 0.9], [0, 0, np.sin(0.5), np.cos(0.5)],
+               [0.5, 0.5, 0.5, 0.5], [-0.2, 0.1, 0.4, 0.8]])
+QUATS = _q / np.linalg.norm(_q, axis=1, keepdims=True)  # x y z w, unit
