@@ -1,10 +1,10 @@
 # CPSL Datasets user guide
 
-Start here. Three pages: this one (what a dataset is, how to open one), [streams.md](streams.md)
-(every non-radar stream) and [radar.md](radar.md) (the radar, in depth). Snippets are short and
-run as written once `capture.h5` is your file; the `# synth:` comment on the first line names the
-synthetic test capture they are checked against. Use `uv run` for everything (see the
-[README](../README.md)).
+Three pages: this one (what a dataset is, how to open one), [streams.md](streams.md)
+(every non-radar stream; [appendix](streams.md#appendix-every-role-getter-and-return) lists every
+role with getter, shape and stamp rule) and [radar.md](radar.md). Snippets run as written once
+`capture.h5` is your file; the `# synth:` comment names the synthetic capture they are tested
+against. Use `uv run` for everything (see the [README](../README.md)).
 
 ## What a dataset is
 
@@ -92,15 +92,6 @@ Two things to expect on real files:
 - **Early frames can be empty.** If a stream's first sample arrived after the reference
   stamp, its getter returns an empty array (`(0, 4)`, `(0, 0)`, `nan` for yaw). Test the size
   before indexing.
-- **Clock.** `clock="recv"` (default) aligns on the recording host's receive stamp, shared by
-  every stream. `clock="header"` uses the message stamp and raises if any bound stream has none.
-  The two differ by about 100 ms on a real radar; see [radar.md](radar.md).
-
-## Which page next
-
-| You want | Read |
-|---|---|
-| lidar, camera, depth, odometry, IMU, Vicon, hands, Leap images, tf | [streams.md](streams.md) |
-| ADC cube, point cloud, radar config, chirp metadata, timing | [radar.md](radar.md) |
-| every role with getter, return shape and stamp rule | [streams.md, appendix](streams.md#appendix-every-role-getter-and-return) |
-| the full `CpslDS` constructor | `help(CpslDS)` |
+- **Clock.** `clock="recv"` (default) aligns on the recording host's receive stamp.
+  `clock="header"` uses the message stamp and raises if any bound stream has none; the two
+  differ by about 100 ms on a real radar ([radar.md](radar.md)). Full constructor: `help(CpslDS)`.

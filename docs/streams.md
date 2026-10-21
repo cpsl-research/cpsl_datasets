@@ -1,8 +1,7 @@
 # Streams other than radar
 
-Getter, shape, units and frame for each stream; the radar is in [radar.md](radar.md). Every
-section has the same shape: what is stored, how to open it, one getter, one plot. Basics of
-opening a file are in [index.md](index.md). Snippets assume
+Getter, shape, units and frame for each stream; the radar is in [radar.md](radar.md), opening
+a file in [index.md](index.md). Snippets assume
 `import numpy as np`, `import matplotlib.pyplot as plt` and `from cpsl_datasets import CpslDS`.
 
 ## Rules that apply to every stream
@@ -40,11 +39,10 @@ plt.show()
 `drop_invalid=True` removes rows with non-finite or all-zero xyz. Pass `frame="base_link"` to
 `CpslDS` to map x y z through `/tf_static` (v4 files only; otherwise `ValueError`).
 
-**Ouster.** The reader side is covered: all nine columns come back through
-`get_point_cloud_columns` (checked on a synthetic Ouster-style cloud only). The recording
-side is not: the Sensors repo has no Ouster recorder config yet (console memo
-`docs/research/2026-10-21-sensor-capture-gaps-ouster-vicon-leap.md`, from source reading, no
-hardware), so no real Ouster file is expected to exist until it does.
+**Ouster.** Reader side only: all nine columns come back through `get_point_cloud_columns`
+(checked on a synthetic cloud). The Sensors repo has no Ouster recorder config yet (console memo
+`docs/research/2026-10-21-sensor-capture-gaps-ouster-vicon-leap.md`), so no real Ouster file
+is expected to exist.
 
 ## Camera and depth
 
@@ -93,9 +91,6 @@ odom = np.vstack([ds.get_vehicle_odom_data(i) for i in range(len(ds))])
 plt.plot(odom[:, 1], odom[:, 2])           # columns: t, x, y, ...
 plt.show()
 ```
-
-On a real vicon-lab file about four odometry rows fall in each 100 ms radar frame (one
-file, `(4, 14)` per frame). The windowing is drawn in Figure 2 of [radar.md](radar.md).
 
 ## Frames and tf
 
@@ -161,11 +156,10 @@ plt.show()
 
 **v1 hands.** Hands in converted v1 datasets are also raw Leap coordinates, whatever the
 `frame_id` says (older converted files were stamped `base_link`, wrongly). The console memo
-above found no code that moved v1 hands to the base frame, from reading one old script; it was
-not checked against the lab's published v1 files. Note: Sensors
-[reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
-(line 172) says v1 hands were in the base frame. That conflicts with the memo; this repo does
-not edit the Sensors docs, so treat v1 hands as raw Leap until someone checks.
+above found no code that moved v1 hands to the base frame (one old script read; not checked
+against published v1 files). Note: Sensors [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/tree/main/src/dataset_generator/docs)
+(line 172) says v1 hands were in the base frame. That conflicts with the memo; treat v1 hands
+as raw Leap until someone checks.
 
 ## Leap images
 

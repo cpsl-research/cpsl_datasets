@@ -6,8 +6,8 @@
 > [CPSL_TI_Radar](https://github.com/davidmhunt/CPSL_TI_Radar) (which includes `radar_gui`).
 
 Open a file as in [index.md](index.md). Snippets name the cube stream because the synthetic
-test file has two; on a file with one radar, plain `CpslDS("capture.h5")` is enough. Real-file
-numbers below come from one sensor (`radar06`); nothing here has been measured on another.
+file has two. Real-file numbers below come from one sensor (`radar06`); nothing here has been
+measured on another.
 
 ## ADC cube
 
@@ -43,9 +43,6 @@ plt.plot(chirp.imag, label="imag")
 plt.legend()
 plt.show()
 ```
-
-If the cube is not the reference (`reference="lidar"`), early frames can be empty: the getter
-then returns shape `(0, 0, 0)`.
 
 ## Radar config and chirp parameters
 
@@ -91,9 +88,6 @@ meta = ds.get_chirp_meta(0)
 print(meta["record_valid"].all(), meta["t_s"][:3])
 ```
 
-On `radar06` (255 chirps per frame) consecutive `t_s` values are about 2 ms apart, matching the
-2000 us chirp in `metrics`; every chirp of the frame inspected was `record_valid`.
-
 ## Point cloud
 
 Stored: a ragged `PointCloud2` stream with a `vel` column. `get_radar_point_cloud(idx)` returns
@@ -129,10 +123,7 @@ On `radar06` the radar's recv stamp is later than its header stamp by a large, j
 | `radar_adc` | 112.1 ms | 4.9 ms | 104.8 ms | 126.3 ms |
 | `adc_meta` | 104.4 ms | 1.5 ms | 102.7 ms | 108.4 ms |
 
-This is one sensor on one capture (a native recorder file, no odometry stream in it); it has
-not been repeated on other radars. The `CpslDS` class docstring (`cpsl_ds.py`) states a
-~0.6 ms recv-header offset for odometry, as a lab figure; it is not measured on this file.
-With `clock="header"` the radar frames therefore line up ~100 ms earlier against recv-stamped
+This is one sensor on one capture; it has not been repeated on other radars. With `clock="header"` the radar frames therefore line up ~100 ms earlier against recv-stamped
 streams. For one query time on `radar06` the two clocks picked adjacent samples (19 versus 20).
 
 ```python
@@ -151,8 +142,8 @@ print(ds.get_stamps("radar_adc")[:3])                      # int64 ns, chosen cl
 the reference stamp and the odometry window. Spacing is illustrative; the ~112 ms offset is
 `radar06`.*
 
-**Frame-synced getters.** Frame `idx` is the idx-th radar cube. The cube, point cloud, camera
-and lidar getters return the newest sample at or before that cube's stamp (ties go to the later
+**Frame-synced getters.** Frame `idx` is the idx-th radar cube. Cube, point cloud, camera and
+lidar getters return the newest sample at or before that cube's stamp (ties go to the later
 row); odometry, velocity, IMU, Vector3 and Vicon return the window
 `(t_ref[idx-1], t_ref[idx]]` (for `idx` 0, everything up to `t_ref[0]`). `ds.sample_index(role,
 idx)` tells which raw sample was served.
@@ -169,9 +160,6 @@ ds = CpslDS("capture.h5", radar_adc="radar_adc", clock="header", tf_message=Fals
             vehicle_vel=False)
 print(len(ds), ds.get_radar_adc_data(0).shape)
 ```
-
-Converted v1 files also have `get_radar_cfg()` of `None` and no `/tf_static`, so `frame=`
-raises; use recv.
 
 ## Appendix: radar `metrics` keys
 
