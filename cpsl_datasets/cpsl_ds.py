@@ -319,7 +319,7 @@ class CpslDS:
         out = {c: (p, _tf.quat_to_T(x, q)) for p, c, x, q in self.capture.tf_static()}
         key = {"recv": "stamp_recv_ns", "header": "stamp_header_ns"}[self.clock]
         for (p, c), g in self.capture.tf_pairs().items():
-            if c not in out:
+            if c not in out and "data" in g and len(g["data"]):  # a tracked pair never received has no data
                 out[c] = (p, {"stamp_header_ns": g[key][:], "data": g["data"][:]})
         return out
 

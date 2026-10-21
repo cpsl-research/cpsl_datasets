@@ -293,3 +293,14 @@ def test_get_transform(v4):
         assert np.allclose(ds.get_transform("odom", "radar", t_ns=t), exp)
         with pytest.raises(ValueError, match="no tf path"):
             ds.get_transform("map", "radar", idx=0)
+
+
+def test_get_transform_tracked_pair_never_received(v4):
+    """A tracked /tf pair with no samples (group without `data`) is skipped, not a KeyError."""
+    with h5py.File(v4, "r+") as f:
+        g = f["tf/odom__base_link"]
+        del g["data"]
+    with CpslDS(v4, radar_adc="radar_adc") as ds:
+        assert ds.get_transform("base_link", "radar").shape == (4, 4)
+        with pytest.raises(ValueError, match="tracked|no tf path"):
+            ds.get_transform("odom", "radar", idx=0)
