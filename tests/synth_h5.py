@@ -169,3 +169,48 @@ def build(path, variant="v4"):
             tg.attrs[k] = v
     b.close()
     return path
+
+
+def build_human_movement(path):
+    """human_movement-shaped v4 capture: radar cube + radar pc, a lidar, an rgb
+    camera, Leap hand clouds (21 points per sample, left hand absent in sample 1
+    = zeros), Leap mono8 images, and a Vicon TransformStamped."""
+    b = Builder(path, 4)
+    rng, n = b.rng, 3
+    b.stream("radar_adc", "raw_radar_msgs/msg/ADCDataCube", n,
+             attrs={"columns": ["real", "imag"], "frame_id": "radar"},
+             fields={"data": rng.integers(-9, 9, (n, 2, 2, 4, 3)).astype(np.int16)})
+    b.rows("radar_pc", "sensor_msgs/msg/PointCloud2", n, ["x", "y", "z", "vel"],
+           attrs={"frame_id": "radar"}, ragged=[2, 3, 1])
+    b.rows("lidar", "sensor_msgs/msg/PointCloud2", n, ["x", "y", "z", "intensity"],
+           attrs={"frame_id": "lidar"}, ragged=[5, 4, 6])
+    b.stream("camera", "sensor_msgs/msg/Image", n,
+             attrs={"encoding": "rgb8", "frame_id": "camera"},
+             fields={"data": rng.integers(0, 200, (n, 5, 6, 3)).astype(np.uint8)})
+    for name in ("hand_left", "hand_right"):
+        g = b.rows(name, "sensor_msgs/msg/PointCloud2", n, ["x", "y", "z"],
+                   attrs={"frame_id": "cpsl_human_movement/leap_link"}, ragged=[21] * n)
+        if name == "hand_left":
+            d = g["data"][:]
+            d[21:42] = 0.0
+            g["data"][...] = d
+    for name in ("leap_left", "leap_right"):
+        b.stream(name, "sensor_msgs/msg/Image", n,
+                 attrs={"encoding": "mono8", "frame_id": "cpsl_human_movement/leap_camera_frame"},
+                 fields={"data": rng.integers(0, 255, (n, 4, 6)).astype(np.uint8)})
+    b.rows("vicon_box", "geometry_msgs/msg/TransformStamped", n,
+           "x y z qx qy qz qw".split(), attrs={"child_frame_id": "box"})
+    b.close()
+    return path
+
+
+def build_multi_radar(path):
+    """IcaRAus-style: three radar point clouds (all with vel) and a lidar."""
+    b = Builder(path, 4)
+    for k in range(3):
+        b.rows("radar_pc_%d" % k, "sensor_msgs/msg/PointCloud2", 3,
+               ["x", "y", "z", "vel"], attrs={"frame_id": "radar%d" % k}, ragged=[2, 1, 3])
+    b.rows("lidar", "sensor_msgs/msg/PointCloud2", 3, ["x", "y", "z", "intensity"],
+           attrs={"frame_id": "lidar"}, ragged=[4, 4, 4])
+    b.close()
+    return path

@@ -304,3 +304,47 @@ def test_get_transform_tracked_pair_never_received(v4):
         assert ds.get_transform("base_link", "radar").shape == (4, 4)
         with pytest.raises(ValueError, match="tracked|no tf path"):
             ds.get_transform("odom", "radar", idx=0)
+
+
+# --- auto-bind: hands are not lidar, ambiguity stays loud ---------------------------
+def test_human_movement_defaults(tmp_path):
+    from synth_h5 import build_human_movement
+    p = build_human_movement(tmp_path / "hm.h5")
+    with CpslDS(p) as ds:
+        assert ds.roles["lidar"] == "lidar"
+        assert ds.roles["hand_left"] == "hand_left" and ds.roles["hand_right"] == "hand_right"
+        assert "hand" not in ds.roles
+        assert ds.roles["radar_pc"] == "radar_pc" and ds.roles["camera"] == "camera"
+        assert ds.get_lidar_point_cloud_raw(0).shape == (5, 4)  # not 21 hand rows
+
+
+def test_single_hand_stream_and_discriminators(tmp_path):
+    from synth_h5 import build_human_movement
+    p = build_human_movement(tmp_path / "hm.h5")
+    with h5py.File(p, "r+") as f:  # v1-style single hand with a neutral name
+        f.move("hand_right", "glove")
+        del f["hand_left"]
+        f["glove"].attrs["frame_id"] = "world"
+    with CpslDS(p) as ds:  # found by 21 points per sample alone
+        assert ds.roles["hand"] == "glove" and "hand_left" not in ds.roles
+        assert ds.roles["lidar"] == "lidar"
+    with h5py.File(p, "r+") as f:
+        f["glove"]["row_count"][...] = [3, 4, 5]
+    with CpslDS(p, hand=False, lidar="lidar") as ds:
+        assert "hand" not in ds.roles
+    with pytest.raises(ValueError, match="lidar: 2 streams"):
+        CpslDS(p)  # no discriminator left: genuinely ambiguous
+
+
+def test_ambiguous_multi_radar_raises_then_name_resolves(tmp_path):
+    from synth_h5 import build_multi_radar
+    p = build_multi_radar(tmp_path / "mr.h5")
+    with pytest.raises(ValueError) as e:
+        CpslDS(p)
+    msg = str(e.value)
+    assert "radar_pc: 3 streams match" in msg and "radar_pc_1" in msg and "radar_pc=<name>" in msg
+    with CpslDS(p, radar_pc="radar_pc_1") as ds:
+        assert ds.roles["radar_pc"] == "radar_pc_1" and ds.roles["lidar"] == "lidar"
+        assert ds.get_radar_point_cloud(0).shape == (2, 4)
+    with CpslDS(p, radar_pc=False) as ds:
+        assert "radar_pc" not in ds.roles

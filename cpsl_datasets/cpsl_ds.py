@@ -8,10 +8,36 @@ from .hdf5 import tf as _tf
 
 # role -> (msg_type short name, extra predicate on the Stream, v1 column order)
 _COLOR = ("rgb8", "bgr8", "rgba8", "bgra8", "8UC3")
+HAND_NAMES = ("hand_left", "hand_right")
+HAND_FRAME_SUFFIXES = ("leap_link", "leap_camera_frame")
+N_HAND_POINTS = 21
+
+
+def _is_hand(s):
+    """A Leap hand-joint cloud: a PointCloud2 without ``vel`` that is named
+    hand_left/hand_right, has a Leap frame_id, or has 21 points in every
+    non-empty sample."""
+    if s.type != "PointCloud2" or "vel" in s.columns:
+        return False
+    if s.name in HAND_NAMES:
+        return True
+    if s.frame_id and s.frame_id.endswith(HAND_FRAME_SUFFIXES):
+        return True
+    if s.ragged:
+        rc = s._g["row_count"][:]
+        rc = rc[rc > 0]
+        return bool(len(rc)) and bool((rc == N_HAND_POINTS).all())
+    return False
+
+
 ROLES = {
     "radar_adc": ("ADCDataCube", None, None),
     "radar_pc": ("PointCloud2", lambda s: "vel" in s.columns, ("x", "y", "z", "vel")),
-    "lidar": ("PointCloud2", lambda s: "vel" not in s.columns, ("x", "y", "z", "intensity")),
+    "lidar": ("PointCloud2", lambda s: "vel" not in s.columns and not _is_hand(s),
+              ("x", "y", "z", "intensity")),
+    "hand_left": ("PointCloud2", lambda s: s.name == "hand_left" and _is_hand(s), None),
+    "hand_right": ("PointCloud2", lambda s: s.name == "hand_right" and _is_hand(s), None),
+    "hand": ("PointCloud2", lambda s: s.name not in HAND_NAMES and _is_hand(s), None),
     "camera": ("Image", lambda s: _enc(s) in _COLOR, None),
     "vehicle_odom": ("Odometry", None, None),
 }
@@ -29,14 +55,21 @@ class CpslDS:
     """Frame-indexed reader for one HDF5 capture, with the v1 getter names.
 
     ``CpslDS(path, radar_adc=None, radar_pc=None, lidar=None, camera=None,
-    vehicle_odom=None, reference=None, sync=True, clock="recv", frame=None)``
+    vehicle_odom=None, hand_left=None, hand_right=None, hand=None,
+    reference=None, sync=True, clock="recv", frame=None)``
 
     **Stream roles.** Each role kwarg takes a stream (group) name. ``None``
     auto-detects: the one stream whose ``msg_type`` matches (radar_adc:
     ADCDataCube; radar_pc: PointCloud2 with a ``vel`` column; lidar:
-    PointCloud2 without one; camera: Image with a colour encoding (rgb8, bgr8,
-    rgba8, bgra8, 8UC3); vehicle_odom: Odometry). Two matches raise
-    ValueError, empty streams included, so name the stream you want. No
+    PointCloud2 without one that is not a hand cloud; hand_left / hand_right:
+    the hand cloud named ``hand_left`` / ``hand_right``; hand: a single other
+    hand cloud (v1-style one ``(21, 3)`` stream); camera: Image with a colour encoding (rgb8, bgr8,
+    rgba8, bgra8, 8UC3); vehicle_odom: Odometry). A *hand cloud* is a
+    PointCloud2 without ``vel`` that is named hand_left/hand_right, has a
+    frame_id ending ``leap_link`` / ``leap_camera_frame``, or has 21 points in
+    every non-empty sample; it never binds as lidar. Two matches raise
+    ValueError, empty streams included (e.g. several radars or lidars: name
+    the one you want, ``radar_pc="radar_pc_1"``, or switch the role off). No
     match leaves the role absent. ``False`` or ``""`` switches a role off.
     A role bound to an empty stream (a stream that never delivered) is
     present with zero samples. ``roles`` maps role -> stream name.
@@ -103,7 +136,8 @@ class CpslDS:
     """
 
     def __init__(self, dataset_path, radar_adc=None, radar_pc=None, lidar=None,
-                 camera=None, vehicle_odom=None, reference=None, sync=True,
+                 camera=None, vehicle_odom=None, hand_left=None, hand_right=None,
+                 hand=None, reference=None, sync=True,
                  clock="recv", frame=None):
         if clock not in ("recv", "header"):
             raise ValueError("clock must be 'recv' or 'header', got %r" % (clock,))
@@ -114,7 +148,9 @@ class CpslDS:
         self.capture = Capture(self.dataset_path)
         try:
             self._setup(dict(radar_adc=radar_adc, radar_pc=radar_pc, lidar=lidar,
-                             camera=camera, vehicle_odom=vehicle_odom), reference)
+                             camera=camera, vehicle_odom=vehicle_odom,
+                             hand_left=hand_left, hand_right=hand_right,
+                             hand=hand), reference)
         except Exception:
             self.capture.close()
             raise
