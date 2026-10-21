@@ -1,38 +1,39 @@
-[tool.poetry]
+[project]
 name = "cpsl_datasets"
 version = "0.1.0"
-description = ""
-authors = ["David Hunt <dmh89@duke.edu>"]
+description = "Access CPSL datasets"
+authors = [{ name = "David Hunt", email = "dmh89@duke.edu" }]
 license = "MIT"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.10, <3.13"
-numpy = "^1.25"
-matplotlib = "^3.8.2"
-imageio = {extras = ["ffmpeg"], version = "^2.33.1"}
-opencv-python = ">4.7, <4.9.0.80"
-poetry-dotenv-plugin = "^0.2.0"
-SciPy = "^1.11.4"
-tqdm = "^4.66.1"
-ipywidgets = "^8.1.1"
-jupyter = "^1.0.0"
-
-# Optional dependencies
-geometries = {path="./submodules/geometries/",develop=true, optional = true}
-
-
-[tool.poetry.extras]
-submodules = [
-    "geometries"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy>=1.25,<2",
+    "scipy>=1.11.4",
+    "matplotlib>=3.8.2",
+    "opencv-python>4.7,<4.9.0.80",
+    "imageio[ffmpeg]>=2.33.1",
+    "tqdm>=4.66.1",
+    "h5py",
+    "pyyaml",
+    "python-dotenv",
 ]
 
-[tool.poetry.group.dev.dependencies]
+[project.optional-dependencies]
+notebooks = ["jupyter>=1.0.0", "ipywidgets>=8.1.1"]
+athena = ["geometries"]
 
-[tool.poetry.group.test.dependencies]
-bandit = "^1.7"
-black = "~22.12.0"
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv.sources]
+geometries = { path = "submodules/geometries", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["cpsl_datasets"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
