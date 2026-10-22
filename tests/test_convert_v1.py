@@ -289,3 +289,11 @@ def test_stream_names_follow_recorder_configs():
             "vehicle_vel": "vehicle_vel", "vicon_x500_8": "vicon_x500_8"}
     for folder, name in want.items():
         assert stream_name(folder) == name, folder
+
+
+def test_sample_rate_hz_written(tmp_path):
+    _, out, _ = conv(tmp_path, frame_rate=5.0)
+    with Capture(out) as c:
+        assert c.capture_mode == "sampled" and c.sample_rate_hz == 5.0
+        assert {s.mode for s in c.streams().values()} == {"sampled"}
+    assert validate(out) == []

@@ -13,6 +13,12 @@ Format and reading semantics are defined in the Sensors repo:
 [hdf5_format.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/blob/main/src/dataset_generator/docs/hdf5_format.md),
 [reading_datasets.md](https://github.com/cpsl-research/CPSL_ROS2_Sensors/blob/main/src/dataset_generator/docs/reading_datasets.md).
 
+## Documentation
+
+- [User guide](docs/index.md): what a dataset is, `inspect`, opening a file
+- [Streams](docs/streams.md): lidar, camera, odometry, IMU, Vicon, hands, Leap images
+- [Radar](docs/radar.md): raw ADC cube, point cloud, config, chirp metadata, timing
+
 ## Installation
 Requires Python 3.10-3.12 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
@@ -113,6 +119,19 @@ uv run python -m cpsl_datasets.inspect capture.h5 [--validate]
 Prints the streams (type, samples, frame_id, time span) and a clock report: the recv minus
 header offset per stream, or that a stream has no header stamps. `--validate` also checks the
 file against `hdf5_format.md` and prints each problem, or `validate: no problems`.
+
+## API reference
+
+A generated reference (every `CpslDS` kwarg with its default, all getters, `Capture`,
+`Stream`, `inspect`, `convert_v1`) is built from the docstrings with
+[pdoc](https://pdoc.dev) (a dev dependency); the output in `docs/api/` is not committed:
+
+```
+uv run pdoc --docformat numpy -o docs/api cpsl_datasets.cpsl_ds cpsl_datasets.hdf5 \
+    cpsl_datasets.inspect cpsl_datasets.convert_v1
+```
+
+Open `docs/api/index.html`.
 
 ## Viewer notebook
 

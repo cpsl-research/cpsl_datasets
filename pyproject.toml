@@ -1,6 +1,6 @@
 [project]
 name = "cpsl_datasets"
-version = "2.0.0"
+version = "2.0.1"
 description = "Access CPSL datasets"
 authors = [{ name = "David Hunt", email = "dmh89@duke.edu" }]
 license = "MIT"
@@ -26,6 +26,7 @@ athena = ["geometries"]
 dev = [
     "ipykernel>=7.3.0",
     "nbclient>=0.11.0",
+    "pdoc>=16.0.0",
     "pytest",
 ]
 

@@ -11,6 +11,7 @@ from synth_v1 import build_v1
 from cpsl_datasets.convert_v1 import convert
 
 NB = Path(__file__).parent.parent / "notebooks" / "dataset_viewer.ipynb"
+GUIDE = Path(__file__).parent.parent / "notebooks" / "user_guide.ipynb"
 
 
 def _v4(tmp_path):
@@ -59,5 +60,29 @@ def test_notebook_executes(tmp_path, monkeypatch, make, streams):
 
 def test_notebook_committed_without_outputs():
     nb = nbformat.read(NB, as_version=4)
+    assert all(not c.outputs and c.execution_count is None
+               for c in nb.cells if c.cell_type == "code")
+
+
+@pytest.mark.parametrize("make,streams", [
+    (_v4, {"radar_adc": "radar_adc", "vehicle_vel": "twist_st"}),
+    (_converted_v1, {"radar_pc": "radar_pc", "camera": "camera", "hand": False}),
+    (_human, {}),
+    (_getters, {}),
+], ids=["v4", "converted_v1", "human", "getters"])
+def test_user_guide_executes(tmp_path, monkeypatch, make, streams):
+    path = make(tmp_path)
+    monkeypatch.setenv("CPSL_DATASET_PATH", str(path))
+    monkeypatch.setenv("CPSL_STREAMS", json.dumps(streams))
+    monkeypatch.setenv("MPLBACKEND", "Agg")
+    nb = nbformat.read(GUIDE, as_version=4)
+    NotebookClient(nb, timeout=120, resources={"metadata": {"path": str(GUIDE.parent)}}).execute()
+    out = "".join(o.get("text", "") for c in nb.cells if c.cell_type == "code"
+                  for o in c.get("outputs", []))
+    assert "frames:" in out
+
+
+def test_user_guide_committed_without_outputs():
+    nb = nbformat.read(GUIDE, as_version=4)
     assert all(not c.outputs and c.execution_count is None
                for c in nb.cells if c.cell_type == "code")
