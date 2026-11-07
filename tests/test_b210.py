@@ -1,5 +1,6 @@
 """B210 streams (SarBurst / SarClockSync): validate, role binding, pairing, reference
 (b210-21 Step 2). Synthetic files only; the real-file check is a Runner step."""
+import os
 import warnings
 
 import h5py
@@ -156,3 +157,106 @@ def test_empty_b210_streams(tmp_path):
         ds = CpslDS(p)
     with ds:
         assert ds.num_frames == 0
+
+
+# --- Step 3: getters ---------------------------------------------------------
+REAL_H5 = "/home/rover/Documents/console/data/b210_runs/rec/b210_04.h5"
+REAL_RUN = "/home/rover/Documents/console/data/b210_runs/run_20261106_155516_rx"
+
+
+def test_get_b210_iq_values(tmp_path):
+    ds = CpslDS(build_b210(tmp_path / "b.h5"))
+    x = ds.get_b210_iq(2)
+    assert x.dtype == np.complex64 and x.shape == (B210_NS,)
+    base = (200 + np.arange(B210_NS)).astype(np.float32)
+    assert np.array_equal(x.real, base) and np.array_equal(x.imag, -base)
+
+
+def test_get_b210_iq_absent_error_and_run_dir(tmp_path):
+    ds = CpslDS(build_b210(tmp_path / "b.h5", iq=False))
+    with pytest.raises(ValueError) as e:
+        ds.get_b210_iq(3)
+    msg = str(e.value)
+    assert "b210_run_dir" in msg and "/runs/b210" in msg
+    assert "sample_offset %d" % (3 * B210_NS) in msg
+    with pytest.raises(FileNotFoundError):
+        ds.get_b210_iq(3, from_run_dir=True)
+
+
+def test_from_run_dir_memmap(tmp_path):
+    n = 6
+    p = build_b210(tmp_path / "b.h5", iq=False)
+    run = tmp_path / "run"
+    run.mkdir()
+    base = np.arange(n * B210_NS, dtype=np.int16)
+    (run / "iq.sc16").write_bytes(np.stack([base, -base], 1).tobytes())
+    with h5py.File(p, "r+") as f:
+        f["b210_bursts"].attrs["b210_run_dir"] = str(run)
+    ds = CpslDS(p)
+    assert ds.b210_run_dir == str(run)
+    x = ds.get_b210_iq(4, from_run_dir=True)
+    exp = base[4 * B210_NS:5 * B210_NS].astype(np.float32)
+    assert x.dtype == np.complex64
+    assert np.array_equal(x.real, exp) and np.array_equal(x.imag, -exp)
+
+
+def test_attr_helpers(tmp_path):
+    p = build_b210(tmp_path / "b.h5")
+    ds = CpslDS(p)
+    assert ds.b210_run_dir == "/runs/b210"
+    assert ds.b210_config_text == "dev: b210\n"
+    assert ds.b210_config_sha256 == "00" * 32
+    ds.close() if hasattr(ds, "close") else None
+    del ds
+    q = tmp_path / "c.h5"
+    import shutil
+    shutil.copy(p, q)
+    with h5py.File(q, "r+") as f:
+        del f["b210_bursts"].attrs["b210_run_dir"]
+    assert CpslDS(q).b210_run_dir is None
+
+
+def test_two_devices_iq_and_override(tmp_path):
+    p = build_b210(tmp_path / "b.h5", devices=("a", "b"))
+    ds = CpslDS(p, b210_bursts="b_bursts")
+    assert ds.b210_run_dir == "/runs/b"
+    assert ds.get_b210_iq(1).shape == (B210_NS,)
+    with pytest.raises(ValueError):
+        CpslDS(p).get_b210_iq(0)
+
+
+def test_host_time_interpolates_and_extrapolates(tmp_path):
+    ds = CpslDS(build_b210(tmp_path / "b.h5"))
+    t = ds.b210_clock_sync()
+    # exact at table rows, linear between, linear beyond the ends (1 tick = 1 us)
+    assert np.array_equal(ds.b210_host_time_ns(t[:, 0]), t[:, 2])
+    mid = (t[0, 0] + t[1, 0]) // 2
+    assert ds.b210_host_time_ns(int(mid)) == t[0, 2] + (mid - t[0, 0]) * 1000
+    assert ds.b210_host_time_ns(int(t[0, 0]) - 10) == t[0, 2] - 10_000
+    assert ds.b210_host_time_ns(int(t[-1, 0]) + 10) == t[-1, 2] + 10_000
+    # agrees with the header stamp (burst-centre host time) to the round trip
+    ds = CpslDS(ds.dataset_path, clock="header")
+    j = 4
+    meta = ds.get_b210_meta(j)
+    st = ds.row_stamps("b210_bursts", j)[0]
+    assert abs(ds.b210_host_time_ns(int(meta["usrp_ticks"])) - st) <= int(t[0, 3])
+
+
+def test_host_time_needs_two_rows(tmp_path):
+    ds = CpslDS(build_b210(tmp_path / "b.h5", n=1))
+    with pytest.raises(ValueError):
+        ds.b210_host_time_ns(0)
+
+
+@pytest.mark.skipif(not (os.path.exists(REAL_H5) and os.path.exists(REAL_RUN + "/iq.sc16")),
+                    reason="real b210_04 capture not on this machine")
+def test_real_file_read_only():
+    ds = CpslDS(REAL_H5)
+    mm = np.memmap(REAL_RUN + "/iq.sc16", dtype=np.int16, mode="r", shape=(56000, 2))
+    exp = mm[:, 0].astype(np.float32) + 1j * mm[:, 1].astype(np.float32)
+    assert np.array_equal(ds.get_b210_iq(0, from_run_dir=True), exp.astype(np.complex64))
+    if "iq" in ds.streams["b210_bursts"]._g:
+        assert np.array_equal(ds.get_b210_iq(0), exp.astype(np.complex64))
+        j = 5
+        off = int(ds.streams["b210_bursts"]._g["sample_offset"][j])
+        assert np.array_equal(ds.get_b210_iq(j), ds.get_b210_iq(j, from_run_dir=True))

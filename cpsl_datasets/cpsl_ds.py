@@ -1,4 +1,5 @@
 """CpslDS v2: v1-style frame getters over a cpsl_dataset_hdf5 capture (format v2-4)."""
+import os
 import warnings
 from collections import namedtuple
 
@@ -1076,6 +1077,88 @@ class CpslDS:
         host_monotonic_ns, host_realtime_ns, round_trip_ns``."""
         g = self._stream("b210_clock_sync")._g
         return g["data"][:] if "data" in g else np.zeros((0, 4), np.int64)
+
+    def _b210_attr(self, name):
+        v = self._stream("b210_bursts").attrs.get(name)
+        if v is None:
+            return None
+        return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+
+    @property
+    def b210_run_dir(self):
+        """The ``b210_run_dir`` attr of the bursts group (the recorder's run folder,
+        holding ``iq.sc16``); None when absent."""
+        return self._b210_attr("b210_run_dir")
+
+    @property
+    def b210_config_text(self):
+        """The ``b210_config_text`` attr of the bursts group (the run config as
+        recorded); None when absent."""
+        return self._b210_attr("b210_config_text")
+
+    @property
+    def b210_config_sha256(self):
+        """The ``b210_config_sha256`` attr of the bursts group; None when absent."""
+        return self._b210_attr("b210_config_sha256")
+
+    def get_b210_iq(self, idx, from_run_dir=False):
+        """IQ of the burst of the frame (newest at or before it), complex64
+        ``(num_samples,)``: the stored int16 pairs as ``I + jQ``, no scaling. An empty array when there is no burst yet.
+
+        With ``from_run_dir=False`` the group's ``iq`` dataset is read; when the capture
+        has none this raises ``ValueError`` naming ``b210_run_dir`` and the burst's
+        ``sample_offset``. With ``from_run_dir=True`` the samples come from a read-only
+        ``np.memmap`` of ``<b210_run_dir>/iq.sc16`` (interleaved int16, ``sample_offset``
+        counted in complex samples); the file is never written."""
+        s = self._stream("b210_bursts")
+        j = self.sample_index("b210_bursts", idx)
+        if j < 0:
+            return np.zeros(0, np.complex64)
+        g = s._g
+        n, off = int(g["num_samples"][j]), int(g["sample_offset"][j])
+        if from_run_dir:
+            rd = self.b210_run_dir
+            if not rd:
+                raise ValueError("%s has no b210_run_dir attr; cannot read iq.sc16"
+                                 % self.dataset_path)
+            f = os.path.join(rd, "iq.sc16")
+            if not os.path.isfile(f):
+                raise FileNotFoundError("%s (b210_run_dir of %s) not found; burst %d is at "
+                                        "sample_offset %d" % (f, self.dataset_path, j, off))
+            raw = np.memmap(f, dtype=np.int16, mode="r", offset=off * 4, shape=(n, 2))
+        elif "iq" in g:
+            raw = np.asarray(g["iq"][j, :2 * n], np.int16).reshape(n, 2)
+        else:
+            raise ValueError(
+                "%s has no iq dataset (recorded without IQ); the samples are in the run "
+                "folder's iq.sc16 at sample_offset %d (complex samples, int16 interleaved), "
+                "b210_run_dir=%r. Use get_b210_iq(idx, from_run_dir=True) if that folder is "
+                "reachable." % (self.dataset_path, off, self.b210_run_dir))
+        out = np.empty(n, np.complex64)
+        out.real, out.imag = raw[:, 0], raw[:, 1]
+        return out
+
+    def b210_host_time_ns(self, usrp_ticks):
+        """Map USRP ticks to host realtime ns (int64) by piecewise-linear interpolation
+        through the SarClockSync table (``usrp_ticks`` -> ``host_realtime_ns``). Ticks
+        outside the table are extrapolated linearly from the first / last segment, so
+        far-away values get less accurate. Needs at least two sync rows (ValueError
+        otherwise). Scalar in -> int; array in -> int64 array. A refinement: the burst's
+        own stamp is already burst-centre host time."""
+        d = self.b210_clock_sync()
+        if len(d) < 2:
+            raise ValueError("need at least 2 clock-sync rows, %s has %d"
+                             % (self.dataset_path, len(d)))
+        d = d[np.argsort(d[:, 0], kind="stable")]
+        x, y = d[:, 0], d[:, 2]
+        t = np.atleast_1d(np.asarray(usrp_ticks, np.int64))
+        k = np.clip(np.searchsorted(x, t, side="right") - 1, 0, len(x) - 2)
+        dx = (x[k + 1] - x[k]).astype(np.float64)
+        slope = np.divide((y[k + 1] - y[k]).astype(np.float64), dx,
+                          out=np.zeros_like(dx), where=dx != 0)
+        # integer base + small float delta keeps ns precision (host ns exceeds 2**53)
+        out = y[k] + np.rint((t - x[k]).astype(np.float64) * slope).astype(np.int64)
+        return int(out[0]) if np.ndim(usrp_ticks) == 0 else out
 
     def get_tf_message(self, idx):
         """The newest recorded /tf message at or before the frame: ``(n, 7)``
