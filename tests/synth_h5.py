@@ -218,6 +218,67 @@ def build_multi_radar(path):
     return path
 
 
+B210_NS = 8  # samples per burst in the synthetic files
+B210_TICKS_PER_S = 1_000_000
+
+
+def build_b210(path, devices=("b210",), n=6, iq=True, with_odom=False, sync_for=None,
+               layout="interleaved int16: iq[2k]=I, iq[2k+1]=Q"):
+    """B210 capture: per device ``<d>_bursts`` (SarBurst, ``n`` bursts 100 ms apart, host
+    realtime stamp at burst centre, recv 8 ms later) and ``<d>_clock_sync`` (SarClockSync,
+    header -1, a row every 3 bursts). ``iq=False`` omits the iq dataset. ``sync_for`` limits
+    which devices get a clock-sync stream (default all). Device k's bursts start k*1 ms later.
+    ``with_odom`` adds a vehicle odometry stream."""
+    b = Builder(path, 4)
+    sync_for = devices if sync_for is None else sync_for
+    for k, d in enumerate(devices):
+        hdr = T0 + k * 1_000_000 + np.arange(n, dtype=np.int64) * 100_000_000
+        ticks = (hdr - T0) // 1000 + 7_000  # usrp ticks: 1 tick = 1 us, offset from host
+        f = {
+            "index": np.arange(n, dtype=np.uint64),
+            "sweep": (np.arange(n) // 3).astype(np.uint32),
+            "step": (np.arange(n) % 3).astype(np.uint32),
+            "sample_offset": (np.arange(n) * B210_NS).astype(np.uint64),
+            "num_samples": np.full(n, B210_NS, np.uint64),
+            "usrp_ticks": ticks.astype(np.int64),
+            "usrp_time_s": ticks / B210_TICKS_PER_S,
+            "tx_freq_hz": 2.4e9 + 1e6 * (np.arange(n) % 3),
+            "rx_freq_hz": 2.4e9 + 1e6 * (np.arange(n) % 3),
+            "lo_offset_hz": np.full(n, 1e6), "tx_gain_db": np.full(n, 20.0),
+            "rx_gain_db": np.full(n, 30.0),
+            "valid": np.arange(n) != 2, "error_flags": (np.arange(n) == 2).astype(np.uint32),
+        }
+        if iq:  # row i: I = 100*i + k, Q = -(100*i + k) per sample position
+            base = (100 * np.arange(n)[:, None] + np.arange(B210_NS)[None, :]).astype(np.int16)
+            f["iq"] = np.stack([base, -base], axis=2).reshape(n, 2 * B210_NS)
+        attrs = {"iq_layout": layout, "frame_id": "", "b210_config_status": "ok",
+                 "b210_config_text": "dev: %s\n" % d,
+                 "b210_config_sha256": "00" * 32, "b210_run_dir": "/runs/%s" % d}
+        b.stream(d + "_bursts", "sar_b210_msgs/msg/SarBurst", n, attrs=attrs, fields=f,
+                 hdr=hdr, recv=hdr + 8_000_000)
+        if d in sync_for:
+            m = (n + 2) // 3
+            sh = hdr[::3][:m] + 50_000_000
+            data = np.stack([(sh - T0) // 1000 + 7_000, sh - 5 * 10**9, sh,
+                             np.full(m, 90_000)], axis=1).astype(np.int64)
+            b.stream(d + "_clock_sync", "sar_b210_msgs/msg/SarClockSync", m, header=False,
+                     attrs={"columns": ["usrp_ticks", "host_monotonic_ns",
+                                        "host_realtime_ns", "round_trip_ns"]},
+                     fields={"data": data}, recv=sh + 1_000_000)
+    if with_odom:
+        b.stream("odom", "nav_msgs/msg/Odometry", 4, attrs={"columns": [
+            "x", "y", "z", "qx", "qy", "qz", "qw", "vx", "vy", "vz", "wx", "wy", "wz"]},
+            fields={"data": b.rng.normal(size=(4, 13))})
+    b.f.attrs["tf_topic"], b.f.attrs["tf_static_topic"] = "/tf", "/tf_static"
+    sg = b.f.create_group("tf_static")  # empty, as the recorder writes without a robot
+    sg["parent"], sg["child"] = _strs([]), _strs([])
+    sg["xyz"], sg["quat_xyzw"] = np.zeros((0, 3)), np.zeros((0, 4))
+    sg["stamp_ns"], sg["recv_ns"] = np.zeros(0, np.int64), np.zeros(0, np.int64)
+    sg.attrs["n_transforms"] = 0
+    b.close()
+    return path
+
+
 def build_getters(path):
     """Capture for the secondary getters: radar cube (reference, 4 @100 ms), an
     Ouster-style organized lidar (extra columns, a NaN and a zero point), two

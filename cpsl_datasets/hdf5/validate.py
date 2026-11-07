@@ -1,5 +1,6 @@
 """Check a capture against hdf5_format.md. ``validate(path) -> list[str]``."""
 import json
+import warnings
 
 import h5py
 import numpy as np
@@ -10,6 +11,7 @@ IMU = "qx qy qz qw wx wy wz ax ay az".split()
 ODOM = "x y z qx qy qz qw vx vy vz wx wy wz".split()
 TWIST = "vx vy vz wx wy wz".split()
 POSE7 = "x y z qx qy qz qw".split()
+CLOCKSYNC = ["usrp_ticks", "host_monotonic_ns", "host_realtime_ns", "round_trip_ns"]
 CAMINFO = (["width", "height"] + ["K%d" % i for i in range(9)]
            + ["R%d" % i for i in range(9)] + ["P%d" % i for i in range(12)]
            + ["D%d" % i for i in range(14)])
@@ -21,6 +23,7 @@ ROW_TYPES = {
     "TransformStamped": (np.float64, 7, POSE7),
     "Vector3Stamped": (np.float64, 3, ["x", "y", "z"]),
     "CameraInfo": (np.float64, 46, CAMINFO),
+    "SarClockSync": (np.int64, 4, CLOCKSYNC),
 }
 RAGGED_TYPES = ("PointCloud2", "TFMessage")
 IMAGE_ENC = {  # encoding -> (dtype, channels or None)
@@ -42,6 +45,41 @@ META = {
     "run_idx_frame": (np.uint16, "n"), "records_valid": (np.uint32, "n"),
     "records_invalid": (np.uint32, "n"), "records_other_run": (np.uint32, "n"),
 }
+# per-field dtype of a SarBurst stream (all (N,); the optional ``iq`` is (N, 2*num_samples))
+BURST = {
+    "index": np.uint64, "sample_offset": np.uint64, "num_samples": np.uint64,
+    "sweep": np.uint32, "step": np.uint32, "error_flags": np.uint32,
+    "usrp_ticks": np.int64,
+    "usrp_time_s": np.float64, "tx_freq_hz": np.float64, "rx_freq_hz": np.float64,
+    "lo_offset_hz": np.float64, "tx_gain_db": np.float64, "rx_gain_db": np.float64,
+    "valid": np.bool_,
+}
+
+
+def _check_burst(g, where, n, a, probs):
+    for k, dt in BURST.items():
+        if k not in g:
+            probs.append("%s: missing field %s" % (where, k))
+            continue
+        d = g[k]
+        if d.dtype != np.dtype(dt):
+            probs.append("%s/%s: dtype %s, expected %s" % (where, k, d.dtype, np.dtype(dt)))
+        if d.shape != (n,):
+            probs.append("%s/%s: shape %s, expected (%d,)" % (where, k, d.shape, n))
+    if "iq" in g:  # optional: absent when the node ran with publish_iq:=false
+        d = g["iq"]
+        if d.dtype != np.int16:
+            probs.append("%s/iq: dtype %s, expected int16" % (where, d.dtype))
+        want = None
+        if "num_samples" in g and g["num_samples"].shape == (n,):
+            want = 2 * int(g["num_samples"][:].max())
+        if d.ndim != 2 or d.shape[0] != n or (want is not None and d.shape[1] != want):
+            probs.append("%s/iq: shape %s, expected (%d,%s)" % (
+                where, d.shape, n, "?" if want is None else want))
+        lay = attr_str(a.get("iq_layout", ""))
+        if lay and not lay.startswith("interleaved int16"):
+            warnings.warn("%s: iq_layout is %r, expected 'interleaved int16: ...'; "
+                          "check the IQ decoding" % (where, lay), stacklevel=2)
 
 
 def _check_stamps(g, where, probs):
@@ -142,6 +180,8 @@ def _check_stream(g, name, probs):
                     probs.append("%s/%s: C=%d differs from %d" % (where, k, d.shape[1], c))
             elif d.shape != exp:
                 probs.append("%s/%s: shape %s, expected %s" % (where, k, d.shape, exp))
+    elif t == "SarBurst":
+        _check_burst(g, where, n, a, probs)
     elif t == "PointCloud2":
         _check_ragged(g, where, n, a, probs, (np.float32, np.float64), None)
     elif t == "TFMessage":

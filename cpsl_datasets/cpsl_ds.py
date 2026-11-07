@@ -53,9 +53,12 @@ ROLES = {
     "chirp_meta": ("ADCChirpMeta", None, None),
     "vector3": ("Vector3Stamped", None, None),
     "tf_message": ("TFMessage", None, None),
+    "b210_bursts": ("SarBurst", None, None),
+    "b210_clock_sync": ("SarClockSync", None, None),
 }
 SECONDARY = ("vehicle_vel", "imu", "camera_depth", "leap_left", "leap_right",
-             "camera_info", "chirp_meta", "vector3", "tf_message")
+             "camera_info", "chirp_meta", "vector3", "tf_message",
+             "b210_bursts", "b210_clock_sync")
 # msg_type -> getters that serve it (tests/test_cpsl_ds.py checks this covers the
 # decoder table in hdf5/validate.py and that every named getter exists)
 TYPE_GETTERS = {
@@ -73,8 +76,10 @@ TYPE_GETTERS = {
     "Vector3Stamped": ("get_vector3",),
     "CameraInfo": ("get_camera_info",),
     "TFMessage": ("get_tf_message",),
+    "SarBurst": ("get_b210_meta",),
+    "SarClockSync": ("b210_clock_sync",),
 }
-REFERENCE_ORDER = ("radar_adc", "radar_pc", "lidar", "camera")
+REFERENCE_ORDER = ("radar_adc", "radar_pc", "lidar", "camera", "b210_bursts")
 DEFAULT_GRID_HZ = 10.0
 
 
@@ -276,7 +281,7 @@ class CpslDS:
                  clock="recv", frame=None, vehicle_vel=None, imu=None,
                  camera_depth=None, leap_left=None, leap_right=None,
                  camera_info=None, chirp_meta=None, vector3=None, tf_message=None,
-                 vicon=None, match="previous"):
+                 vicon=None, match="previous", b210_bursts=None, b210_clock_sync=None):
         """Open the capture at ``dataset_path`` and bind its streams to roles.
 
         Parameters
@@ -305,7 +310,7 @@ class CpslDS:
             its samples, ``num_frames`` is its length, and every other role is
             aligned to it. ``"grid:<hz>"`` (e.g. ``"grid:5"``; ``"grid"`` = 10 Hz)
             frames on a uniform time grid instead. ``None`` takes the first
-            non-empty of radar_adc, radar_pc, lidar, camera, else a 10 Hz grid
+            non-empty of radar_adc, radar_pc, lidar, camera, b210_bursts, else a 10 Hz grid
             (with a warning).
         sync : bool, default True
             ``True``: ``idx`` is a reference-stream index and other roles are
@@ -340,6 +345,12 @@ class CpslDS:
             Which sample of a non-reference stream is served for a reference
             sample: the newest at or before it, or the closest in time either
             side. Row-window getters keep their window either way.
+        b210_bursts : str, False or None, default None
+            B210 SarBurst stream (``b210_bursts``, or ``<device>_bursts``).
+            Several devices: auto-detect is ambiguous, name one.
+        b210_clock_sync : str, False or None, default None
+            B210 SarClockSync stream; auto-pairs with the bursts stream
+            (``<p>_bursts`` takes ``<p>_clock_sync``, else the only one).
 
         Raises
         ------
@@ -366,7 +377,8 @@ class CpslDS:
                              camera_depth=camera_depth, leap_left=leap_left,
                              leap_right=leap_right, camera_info=camera_info,
                              chirp_meta=chirp_meta, vector3=vector3,
-                             tf_message=tf_message), reference, vicon)
+                             tf_message=tf_message, b210_bursts=b210_bursts,
+                             b210_clock_sync=b210_clock_sync), reference, vicon)
         except Exception:
             self.capture.close()
             raise
@@ -377,6 +389,11 @@ class CpslDS:
         self.streams = {}
         self._deferred = {}
         for role, name in requested.items():
+            if (role == "b210_clock_sync" and name is None and "b210_bursts" in self.streams
+                    and self.streams["b210_bursts"].name.endswith("_bursts")):
+                mate = self.streams["b210_bursts"].name[:-len("bursts")] + "clock_sync"
+                if mate in all_streams and all_streams[mate].type == "SarClockSync":
+                    name = mate  # same-device pairing
             try:
                 s = self._bind(role, name, all_streams)
             except ValueError as e:
@@ -405,7 +422,8 @@ class CpslDS:
         self.roles = {r: s.name for r, s in self.streams.items()}
         self._t, self._order, self._sorted = {}, {}, {}
         for role, s in self.streams.items():
-            t = s.stamps(self.clock)
+            # SarClockSync has no header (-1); its recv stamp is the host arrival time
+            t = s.stamps("recv" if s.type == "SarClockSync" else self.clock)
             if self.clock == "header" and len(t) and (t < 0).any():
                 raise ValueError("%s (%s) has no header stamps (-1); use clock='recv'"
                                  % (role, s.name))
@@ -1045,6 +1063,19 @@ class CpslDS:
         self._stream("chirp_meta")
         j = self.sample_index("chirp_meta", idx)
         return {} if j < 0 else self.streams["chirp_meta"].read(j)
+
+    def get_b210_meta(self, idx):
+        """The SarBurst sample of the frame (newest at or before it) as
+        ``{field: scalar}`` (no ``iq``); ``{}`` when there is none yet."""
+        self._stream("b210_bursts")
+        j = self.sample_index("b210_bursts", idx)
+        return {} if j < 0 else self.streams["b210_bursts"].read(j, iq=False)
+
+    def b210_clock_sync(self):
+        """The whole SarClockSync table, int64 ``(N, 4)``: ``usrp_ticks,
+        host_monotonic_ns, host_realtime_ns, round_trip_ns``."""
+        g = self._stream("b210_clock_sync")._g
+        return g["data"][:] if "data" in g else np.zeros((0, 4), np.int64)
 
     def get_tf_message(self, idx):
         """The newest recorded /tf message at or before the frame: ``(n, 7)``

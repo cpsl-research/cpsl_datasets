@@ -28,10 +28,10 @@ def api(tmp_path_factory):
     return out / "cpsl_datasets"
 
 
-def test_signature_has_23_kwargs():
+def test_signature_has_25_kwargs():
     params = [p for n, p in inspect.signature(CpslDS.__init__).parameters.items()
               if n not in ("self", "dataset_path")]
-    assert len(params) == 23
+    assert len(params) == 25
 
 
 def test_cpslds_kwargs_and_defaults_listed(api):

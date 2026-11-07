@@ -92,11 +92,17 @@ class Stream:
             raise IndexError("%s: sample %d out of range (%d)" % (self.name, i, n))
         return i
 
-    def read(self, i, raw=False):
+    def read(self, i, raw=False, iq=True):
         """Decode sample ``i``. ``raw=True`` keeps an ADC cube as int16
-        ``(2, rx, sample, chirp)`` instead of complex ``(rx, sample, chirp)``."""
+        ``(2, rx, sample, chirp)`` instead of complex ``(rx, sample, chirp)``.
+        A SarBurst gives ``{field: scalar}`` plus ``"iq"`` (the stored int16
+        interleaved row) when the stream has one and ``iq=True``."""
         i = self._index(i)
         g = self._g
+        if self.type == "SarBurst":
+            return {k: g[k][i] for k in g
+                    if k not in ("stamp_header_ns", "stamp_recv_ns")
+                    and isinstance(g[k], h5py.Dataset) and (iq or k != "iq")}
         if self.type == "ADCChirpMeta":
             return {k: g[k][i] for k in g
                     if k not in ("stamp_header_ns", "stamp_recv_ns")
