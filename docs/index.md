@@ -74,7 +74,8 @@ usable header stamps (every converted v1 file, see [radar.md](radar.md)).
 
 ## Open it
 
-The default reference is the first non-empty of radar_adc, radar_pc, lidar, camera; every other
+The default reference is the first non-empty of radar_adc, radar_pc, lidar, camera (if none has
+samples, a 10 Hz time grid with a warning, see "Choosing the reference"); every other
 getter returns that role's newest sample at or before the reference sample's stamp, however old:
 across a gap it is stale with no warning (`match(...).dt_ns` shows the age; `interp` gives NaN).
 
@@ -129,6 +130,27 @@ print(len(ds), ds.reference)        # frames are now odometry samples
 ```
 
 - `reference="lidar"` (any bound role): which role counts the frames.
+- `reference="grid:<hz>"` (`"grid"` = 10 Hz): frames are a uniform clock, not a stream, so
+  `len(ds)` follows the capture's duration and not a sensor's rate. `ds.reference == "grid"`,
+  `ds.grid_hz` is the rate. Frame `k` is at `t_first + k * round(1e9/hz)` ns, from the
+  start of the span where every bound stream has data (the intersection of their first/last
+  stamps; `camera_info`, a static sample, is ignored) to its end, so no frame lacks data
+  for lack of a start; if the streams never overlap the span is their union, with a warning.
+  Every role is matched to a grid stamp exactly as to a sensor reference (`dt = t_sample -
+  t_grid`, windows still partition the rows once, rows before frame 0 land in frame 0).
+  Nothing is resampled. A capture with no sensor stream to frame on (say odometry only) opens
+  on `"grid"` with a warning; pass `reference="vehicle_odom"` to frame on odometry instead.
+  A rate that is not a positive number raises ValueError.
+
+```python
+# synth: all
+from cpsl_datasets import CpslDS
+
+ds = CpslDS("capture.h5", reference="grid:5", tf_message=False)
+print(len(ds), ds.reference, ds.grid_hz)   # frames every 0.2 s over the shared time span
+print(ds.get_vehicle_odom_data(2).shape)   # odometry rows inside frame 2's 0.2 s window
+```
+
 - `match="previous"` (default) serves the newest sample at or before the reference stamp;
   `"nearest"` the closest either side. Ties: among equal sample stamps `previous` takes the
   later row; a sample equidistant either side goes to the earlier. Windowed streams are unchanged.

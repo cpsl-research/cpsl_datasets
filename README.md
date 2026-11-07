@@ -53,8 +53,10 @@ ds.close()                           # or: with CpslDS(path) as ds:
 ```
 
 `idx` is a sample of the reference stream (the first non-empty of radar_adc, radar_pc, lidar,
-camera; override with `reference="lidar"`). Every other getter returns that stream's newest
-sample at or before the reference sample. `num_frames` is the reference length. The full
+camera; override with `reference="lidar"`, or frame on a uniform clock with
+`reference="grid:5"`, bare `"grid"` = 10 Hz; a capture with no such sensor stream gets the 10 Hz
+grid by default, with a warning). Every other getter returns that stream's newest
+sample at or before the reference sample. `num_frames` is the reference length (or the grid's). The full
 constructor, every getter and its return shape are in the `CpslDS` docstring
 (`help(CpslDS)`). Getters: `get_radar_adc_data`, `get_radar_cfg`, `get_radar_point_cloud`,
 `get_lidar_point_cloud(_raw)`, `get_camera_frame`, `get_camera_depth_frame`,

@@ -178,12 +178,12 @@ def test_odom_window_partition_recv(tmp_path):
             assert all(tr[i - 1] < to[k] <= tr[i] for k in rows)
 
 
-def test_odom_only_capture_has_no_reference(tmp_path):
+def test_odom_only_capture_gets_the_grid(tmp_path):
     p = mixed(tmp_path / "m.h5")
-    with CpslDS(p, radar_adc=False, lidar=False, camera=False) as ds:
-        assert ds.reference is None and ds.num_frames == 0
-        with pytest.raises(RuntimeError, match="reference"):
-            ds.get_vehicle_odom_data(0)
+    with pytest.warns(UserWarning, match="time grid"):
+        ds = CpslDS(p, radar_adc=False, lidar=False, camera=False)
+    with ds:
+        assert ds.reference == "grid" and ds.num_frames > 0  # grid tests: test_grid.py
     with CpslDS(p, radar_adc=False, lidar=False, camera=False,
                 reference="vehicle_odom") as ds:
         assert ds.num_frames == 20

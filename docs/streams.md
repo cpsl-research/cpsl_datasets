@@ -8,7 +8,7 @@ a file in [index.md](index.md).
 - Getters return **what was recorded**, as stored. Nothing is rescaled, rectified or moved to
   another frame unless you ask (`frame=` for lidar and radar point clouds, `get_transform`).
 - Two kinds of getter. **Newest-sample** getters (cameras, point clouds, `camera_info`) return
-  the newest sample at or before the reference stamp. **Windowed** getters (odometry, velocity,
+  the newest sample at or before the reference stamp (a sensor's, or a `reference="grid:<hz>"` tick). **Windowed** getters (odometry, velocity,
   IMU, Vector3, Vicon) return every row with a stamp in `(t_ref[idx-1], t_ref[idx]]`, so
   stacking all frames reproduces the stream once.
 - An empty result (no sample yet) is `(0, ...)`-shaped, never `None`, except `get_camera_info`.

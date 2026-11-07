@@ -75,6 +75,21 @@ TYPE_GETTERS = {
     "TFMessage": ("get_tf_message",),
 }
 REFERENCE_ORDER = ("radar_adc", "radar_pc", "lidar", "camera")
+DEFAULT_GRID_HZ = 10.0
+
+
+def _parse_grid(ref):
+    """Rate in Hz of ``"grid"`` (the default) or ``"grid:<hz>"``; ValueError if bad."""
+    if ref == "grid":
+        return DEFAULT_GRID_HZ
+    try:
+        hz = float(ref[5:])
+    except ValueError:
+        hz = float("nan")
+    if not (0 < hz < float("inf")):
+        raise ValueError("reference=%r: the grid rate must be a positive number of Hz, "
+                         "e.g. 'grid:10'" % ref)
+    return hz
 CLOUD_ROLES = ("radar_pc", "lidar")
 VEL_COLS = {"Twist": (0, 5), "TwistStamped": (0, 5), "Odometry": (7, 12)}  # vx, wz
 ODOM_COLS = 14  # t + x y z qx qy qz qw vx vy vz wx wy wz
@@ -148,13 +163,22 @@ class CpslDS:
     (any bound role, e.g. ``"vehicle_odom"``, ``"lidar"``) makes that stream
     the one ``idx`` counts and the others are aligned to; the default is the
     first of radar_adc, radar_pc, lidar, camera that has samples.
+    **Time grid:** ``reference="grid:<hz>"`` (``"grid"`` = 10 Hz) makes frames a
+    uniform clock instead of a stream: ``ds.reference == "grid"``, ``ds.grid_hz``,
+    ``t_k = t_first + k * round(1e9/hz)`` ns, ``num_frames = floor((t_last - t_first)
+    / period) + 1``, the span being the intersection of the bound streams'
+    first/last stamps (``camera_info`` excluded; the union, with a warning, when
+    they never overlap). Roles match the grid stamp as they would a sensor
+    reference (``dt = t_sample - t_k``; windows partition rows exactly once). It is
+    also the default, with a warning, when no sensor role has samples.
     **Which sample (``match=``).** ``"previous"`` (default) serves the newest
     sample at or before the reference stamp; ``match="nearest"`` serves the
     closest one in time either side (an exact tie goes to the earlier). Both
     apply to frame getters; the row-window getters (odometry, imu, ...) keep
-    their ``(t_ref[idx-1], t_ref[idx]]`` window either way. With no reference (e.g. a capture holding only
-    odometry) ``num_frames`` is 0 and synced getters raise; pass
-    ``reference="vehicle_odom"`` or ``sync=False``.
+    their ``(t_ref[idx-1], t_ref[idx]]`` window either way. With no sensor reference (e.g. a capture holding only
+    odometry) the frames are the 10 Hz grid (warning); pass
+    ``reference="vehicle_odom"`` for odometry frames or ``sync=False``. A capture
+    with no non-empty stream at all has 0 frames and synced getters raise.
     **sync=False** makes ``idx`` the role's own raw sample index (out of
     range raises IndexError); ``num_frames`` is still the reference length.
 
@@ -279,8 +303,10 @@ class CpslDS:
             **Selects the reference stream**: a role name such as
             ``"radar_adc"``, ``"lidar"`` or ``"vehicle_odom"``. ``idx`` counts
             its samples, ``num_frames`` is its length, and every other role is
-            aligned to it. ``None`` takes the first non-empty of radar_adc,
-            radar_pc, lidar, camera.
+            aligned to it. ``"grid:<hz>"`` (e.g. ``"grid:5"``; ``"grid"`` = 10 Hz)
+            frames on a uniform time grid instead. ``None`` takes the first
+            non-empty of radar_adc, radar_pc, lidar, camera, else a 10 Hz grid
+            (with a warning).
         sync : bool, default True
             ``True``: ``idx`` is a reference-stream index and other roles are
             aligned to it. ``False``: ``idx`` is the role's own raw index.
@@ -388,17 +414,55 @@ class CpslDS:
                 warnings.warn("%s: %s stamps are not monotonic; lookups use sorted order"
                               % (s.name, self.clock), stacklevel=3)
             self._t[role], self._order[role], self._sorted[role] = t, order, t[order]
+        self.grid_hz = None
+        self._ref_t = None
+        grid = None
         if reference is None:
             reference = next((r for r in REFERENCE_ORDER
                               if r in self.streams and len(self.streams[r])), None)
+            if reference is None:
+                grid = DEFAULT_GRID_HZ
+                if self.sync:  # unsynced, idx is the role's own index; no frames to warn about
+                    warnings.warn(
+                        "%s: no sensor stream (%s) with samples to frame on; using a %g Hz "
+                        "time grid. Pass reference=<role> or reference='grid:<hz>' to choose."
+                        % (self.dataset_path, ", ".join(REFERENCE_ORDER), grid), stacklevel=3)
+        elif isinstance(reference, str) and (reference == "grid" or reference.startswith("grid:")):
+            grid = _parse_grid(reference)
         elif reference not in self.streams:
             raise ValueError("reference=%r is not a bound role (bound: %s)"
                              % (reference, sorted(self.streams)))
-        self.reference = reference
-        self.num_frames = len(self.streams[reference]) if reference else 0
+        if grid is not None:
+            self.reference, self.grid_hz = "grid", grid
+            self._ref_t = self._grid_times(grid)
+            self.num_frames = len(self._ref_t)
+        else:
+            self.reference = reference
+            self._ref_t = self._t[reference] if reference else None
+            self.num_frames = len(self.streams[reference]) if reference else 0
         self._T = {}
         if self.frame is not None:
             self._setup_frame()
+
+    def _grid_times(self, hz):
+        """int64 ns frame times of a uniform grid over the bound streams' span:
+        the intersection of their [first, last] stamps (``camera_info`` excluded),
+        the union with a warning when they never overlap; ``period_ns`` integer."""
+        period = int(round(1e9 / hz))
+        if period < 1:
+            raise ValueError("grid rate %g Hz is above 1 GHz" % hz)
+        self.grid_period_ns = period
+        spans = [(int(t.min()), int(t.max())) for r, t in self._t.items()
+                 if r != "camera_info" and len(t)]
+        if not spans:
+            return np.zeros(0, np.int64)
+        t0, t1 = max(a for a, _ in spans), min(b for _, b in spans)
+        if t0 > t1:
+            t0, t1 = min(a for a, _ in spans), max(b for _, b in spans)
+            warnings.warn("%s: the bound streams' time ranges do not overlap; the grid spans "
+                          "their union, so early and late frames hold no data for some roles"
+                          % self.dataset_path, stacklevel=4)
+        return t0 + period * np.arange((t1 - t0) // period + 1, dtype=np.int64)
 
     def _bind(self, role, name, all_streams):
         if name is False or name == "":
@@ -471,7 +535,7 @@ class CpslDS:
         return self.streams[role]
 
     def _ref_time(self, idx):
-        if self.reference is None:
+        if self._ref_t is None:
             raise RuntimeError("no reference stream with samples in %s; pass reference=<role> "
                                "or sync=False" % self.dataset_path)
         n = self.num_frames
@@ -480,7 +544,7 @@ class CpslDS:
             i += n
         if not 0 <= i < n:
             raise IndexError("frame %d out of range (%d)" % (int(idx), n))
-        return i, int(self._t[self.reference][i])
+        return i, int(self._ref_t[i])
 
     def sample_index(self, role, idx):
         """Raw sample index of ``role`` served for ``idx``; -1 = none yet."""
@@ -762,9 +826,9 @@ class CpslDS:
         if not self.sync:
             return np.array([s._index(idx)])
         i, t1 = self._ref_time(idx)
-        if self.roles[self.reference] == self.roles[role]:
+        if self.grid_hz is None and self.roles[self.reference] == self.roles[role]:
             return np.array([i])
-        lo = int(self._t[self.reference][i - 1]) if i > 0 else None
+        lo = int(self._ref_t[i - 1]) if i > 0 else None
         m = t <= t1 if lo is None else (t > lo) & (t <= t1)
         rows = np.flatnonzero(m)
         return rows[np.argsort(t[rows], kind="stable")]
