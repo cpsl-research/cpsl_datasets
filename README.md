@@ -53,7 +53,7 @@ ds.close()                           # or: with CpslDS(path) as ds:
 ```
 
 `idx` is a sample of the reference stream (the first non-empty of radar_adc, radar_pc, lidar,
-camera; override with `reference="lidar"`, or frame on a uniform clock with
+camera, b210_bursts; override with `reference="lidar"`, or frame on a uniform clock with
 `reference="grid:5"`, bare `"grid"` = 10 Hz; a capture with no such sensor stream gets the 10 Hz
 grid by default, with a warning). Every other getter returns that stream's newest
 sample at or before the reference sample. `num_frames` is the reference length (or the grid's). The full
@@ -62,6 +62,7 @@ constructor, every getter and its return shape are in the `CpslDS` docstring
 `get_lidar_point_cloud(_raw)`, `get_camera_frame`, `get_camera_depth_frame`,
 `get_vehicle_odom_data`, `get_vehicle_vel_data`, `get_imu_full_data`, `get_vector3`,
 `get_vicon_data`, `get_hand_tracking_data`, `get_leap_motion_image_frame_left/right`,
+`get_b210_meta`, `get_b210_iq`, `b210_clock_sync`, `b210_host_time_ns` (burst start), `b210_burst_center_ns`,
 `get_stamps`, `get_transform`.
 
 Choosing streams. A capture with several radars or lidars is ambiguous and raises

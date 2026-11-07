@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 matplotlib.use("Agg")
-from synth_h5 import build, build_all, build_getters, build_human_movement, build_multi_radar  # noqa: E402
+from synth_h5 import build, build_all, build_b210, build_getters, build_human_movement, build_multi_radar  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 BUILDERS = {
@@ -17,6 +17,7 @@ BUILDERS = {
     "human": build_human_movement,
     "multi": build_multi_radar,
     "all": build_all,
+    "b210": build_b210,
 }
 # Streams a recorder capture would not have; the doc snippets rely on auto-binding.
 DROP = ("radar_adc_empty", "twist_st", "cmd_vel")

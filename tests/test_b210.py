@@ -260,3 +260,31 @@ def test_real_file_read_only():
         j = 5
         off = int(ds.streams["b210_bursts"]._g["sample_offset"][j])
         assert np.array_equal(ds.get_b210_iq(j), ds.get_b210_iq(j, from_run_dir=True))
+
+
+def test_burst_center_is_start_plus_half_burst(tmp_path):
+    p = tmp_path / "c.h5"
+    build_b210(p, n=6)
+    with CpslDS(p, clock="header") as ds:
+        ticks = int(ds.get_b210_meta(3)["usrp_ticks"])
+        half = B210_NS / (2 * 1e6) * 1e9  # synthetic tick rate 1 MHz
+        c = ds.b210_burst_center_ns(3)
+        assert c == ds.b210_host_time_ns(ticks) + int(round(half))
+        assert c == ds.b210_burst_center_ns(3, sample_rate_hz=1e6)
+        assert ds.b210_burst_center_ns(3, sample_rate_hz=2e6) == ds.b210_host_time_ns(ticks) + int(round(half / 2))
+
+
+def test_inspect_prints_reference_and_b210_streams(tmp_path, capsys):
+    from cpsl_datasets.inspect import main
+    p, q = tmp_path / "a.h5", tmp_path / "b.h5"
+    build_b210(p, n=6, iq=False)
+    build_b210(q, devices=("x", "y"), n=6)
+    main([str(p)])
+    out = capsys.readouterr().out
+    assert "reference: b210_bursts" in out and "6 frames" in out
+    assert "device b210" in out and "iq absent" in out and "5 valid" in out
+    assert "run_dir /runs/b210" in out
+    main([str(q)])
+    out = capsys.readouterr().out
+    assert "reference: grid:10" in out and "device x" in out and "device y" in out
+    assert "iq present" in out and "several devices" in out

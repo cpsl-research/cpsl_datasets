@@ -174,6 +174,47 @@ if img.size:
     plt.show()
 ```
 
+## B210 (SAR bursts)
+
+A console B210 capture has `b210_bursts` (SarBurst: one row per burst) and `b210_clock_sync`
+(SarClockSync: a table). With several devices the streams are `<name>_bursts` and
+`<name>_clock_sync`; a bursts stream takes the clock-sync stream with the same prefix, else the
+only one. Several devices are ambiguous, so bind one: `CpslDS(path, b210_bursts="rx2_bursts")`.
+The reader only reads: stitching, range/Doppler and calibration live in `sar_b210`.
+
+```python
+# synth: b210
+from cpsl_datasets import CpslDS
+
+ds = CpslDS("capture.h5")                 # a B210-only file frames on b210_bursts
+print(ds.reference, len(ds))              # b210_bursts, one frame per burst
+meta = ds.get_b210_meta(1)                # dict: sweep, step, usrp_ticks, rx_freq_hz, valid, ...
+print(meta["num_samples"], ds.b210_run_dir, ds.b210_config_sha256)
+table = ds.b210_clock_sync()              # (N, 4) usrp_ticks, host_monotonic_ns, host_realtime_ns, round_trip_ns
+iq = ds.get_b210_iq(1)                    # complex64 (num_samples,), I + jQ, no scaling
+# without an iq dataset this raises ValueError naming b210_run_dir and sample_offset; then
+# ds.get_b210_iq(1, from_run_dir=True) reads <b210_run_dir>/iq.sc16 (read-only memmap)
+start = ds.b210_host_time_ns(int(meta["usrp_ticks"]))   # host time of the burst START
+centre = ds.b210_burst_center_ns(1)                      # START + num_samples / (2 * fs)
+```
+
+- `iq` present or absent: the recorder can leave the IQ out of the HDF5 (it is in the run
+  folder's `iq.sc16`). `get_b210_iq(idx)` then raises `ValueError` naming `b210_run_dir` and the
+  burst's `sample_offset`; `get_b210_iq(idx, from_run_dir=True)` memory-maps
+  `<b210_run_dir>/iq.sc16` read-only (never written; the folder must be reachable).
+- Stamps are burst CENTRE. The stream's header stamp is the host realtime at the middle of the
+  burst, so `get_stamps("b210_bursts")`, `match`, `at_time` and `window` work as for any role.
+- `b210_host_time_ns(usrp_ticks)` maps ticks to host realtime by piecewise-linear
+  interpolation through the clock-sync table (linear extrapolation beyond it). `usrp_ticks` is the
+  tick of the burst's first sample, so it returns the burst START, not the centre: add
+  `num_samples / (2 * sample_rate)` (0.5 ms for 56000 samples at 56 MS/s) or call
+  `b210_burst_center_ns(idx, sample_rate_hz=None)`, which does that (the rate defaults to the
+  tick rate). Expect it to agree with the stamp within the clock-sync round trip (checked on a real file in b210-21).
+- `b210_config_text`, `b210_config_sha256`, `b210_run_dir`: the run config and run folder as
+  recorded (`None` when absent). Burst fields are `index, sweep, step, sample_offset,
+  num_samples, usrp_ticks, usrp_time_s, tx/rx_freq_hz, lo_offset_hz, tx/rx_gain_db, valid,
+  error_flags`.
+
 ## Appendix: every role, getter and return
 
 Roles are `CpslDS` keyword names; give a stream name to pick one, `False` to switch it off.
@@ -198,6 +239,10 @@ Roles are `CpslDS` keyword names; give a stream name to pick one, `False` to swi
 | vicon | `get_vicon_data(idx, name, wxyz)` | `(m, 7)` or dict | window |
 | hand_left, hand_right | `get_hand_tracking_data(idx, hand)` | `(21, 3)` | newest |
 | leap_left, leap_right | `get_leap_motion_image_frame_left/right(idx)` | `(H, W)` uint8 | newest |
+| b210_bursts | `get_b210_meta(idx)` | dict of scalars (`{}` if none) | newest; reference when no radar, lidar or camera |
+| b210_bursts | `get_b210_iq(idx, from_run_dir)` | complex64 `(num_samples,)` | newest; `ValueError` without `iq` |
+| b210_bursts | `b210_burst_center_ns(idx)`, `b210_host_time_ns(ticks)` | int ns (host realtime) | clock-sync map (centre / start) |
+| b210_clock_sync | `b210_clock_sync()` | int64 `(N, 4)` | static table |
 | tf_message | `get_tf_message(idx)` | `(n, 7)` | newest, recv only |
 | (tf) | `get_transform(target, source, idx, t_ns)` | `4 x 4` float64 | tracked edge at stamp |
 | any | `get_stamps(role)` | int64 ns, whole stream | chosen clock |

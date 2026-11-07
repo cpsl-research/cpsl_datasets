@@ -68,14 +68,17 @@ flowchart LR
 ## Look before you open
 
 `inspect` prints the format, version and `closed_cleanly`, a table of streams (name, type,
-samples, frame id, time span), a recv-versus-header clock report and the transforms. `--validate`
+samples, frame id, time span), a recv-versus-header clock report, the reference `CpslDS(file)`
+would choose (a sensor role, or `grid:10 Hz`), a line per B210 device (bursts, valid count, `iq`
+present or absent, run folder, clock-sync stream) and the transforms. `--validate`
 adds structural checks and prints `validate: no problems` when the file is sound. "header stamps are -1 (no header): use recv" means the file has no
 usable header stamps (every converted v1 file, see [radar.md](radar.md)).
 
 ## Open it
 
-The default reference is the first non-empty of radar_adc, radar_pc, lidar, camera (if none has
-samples, a 10 Hz time grid with a warning, see "Choosing the reference"); every other
+The default reference is the first non-empty of radar_adc, radar_pc, lidar, camera, b210_bursts (if none has
+samples, then `b210_bursts` for a B210 capture; if none has samples, a 10 Hz time grid with a
+warning, see "Choosing the reference"); every other
 getter returns that role's newest sample at or before the reference sample's stamp, however old:
 across a gap it is stale with no warning (`match(...).dt_ns` shows the age; `interp` gives NaN).
 
@@ -140,7 +143,13 @@ print(len(ds), ds.reference)        # frames are now odometry samples
   t_grid`, windows still partition the rows once, rows before frame 0 land in frame 0).
   Nothing is resampled. A capture with no sensor stream to frame on (say odometry only) opens
   on `"grid"` with a warning; pass `reference="vehicle_odom"` to frame on odometry instead.
-  A rate that is not a positive number raises ValueError.
+  A rate that is not a positive number raises ValueError. A B210 capture has `b210_bursts` as
+  the last sensor entry in the default order, so it frames on its bursts (see
+  [streams.md](streams.md) for the B210 roles and getters); `reference="grid:<hz>"` gives it a
+  uniform clock instead.
+  **Changed in 2.1.0:** a file with no sensor stream used to open with `reference is None` and 0
+  frames (synced getters raised); it now gets the grid and a warning, so code that tests
+  `ds.reference is None` or `len(ds) == 0` for such files needs updating.
 
 ```python
 # synth: all

@@ -160,7 +160,7 @@ class CpslDS:
 
     **Index (sync=True, the default).** ``idx`` is a sample of the
     *reference* stream: ``reference=`` (a role name), else the first of
-    radar_adc, radar_pc, lidar, camera that is bound and non-empty.
+    radar_adc, radar_pc, lidar, camera, b210_bursts that is bound and non-empty.
     ``num_frames`` is its length. Every other getter returns that stream's
     newest sample stamped at or before the reference sample (reading_datasets
     section 3 ``last``; ties go to the later row). When a stream has no
@@ -168,7 +168,7 @@ class CpslDS:
     for an unreadable file. **Choosing the reference:** ``reference="radar_adc"``
     (any bound role, e.g. ``"vehicle_odom"``, ``"lidar"``) makes that stream
     the one ``idx`` counts and the others are aligned to; the default is the
-    first of radar_adc, radar_pc, lidar, camera that has samples.
+    first of radar_adc, radar_pc, lidar, camera, b210_bursts that has samples.
     **Time grid:** ``reference="grid:<hz>"`` (``"grid"`` = 10 Hz) makes frames a
     uniform clock instead of a stream: ``ds.reference == "grid"``, ``ds.grid_hz``,
     ``t_k = t_first + k * round(1e9/hz)`` ns, ``num_frames = floor((t_last - t_first)
@@ -1144,7 +1144,14 @@ class CpslDS:
         outside the table are extrapolated linearly from the first / last segment, so
         far-away values get less accurate. Needs at least two sync rows (ValueError
         otherwise). Scalar in -> int; array in -> int64 array. A refinement: the burst's
-        own stamp is already burst-centre host time."""
+        own stamp is already burst-centre host time.
+
+        What is mapped: ``usrp_ticks`` is the tick of the burst's FIRST sample, so this
+        returns the host time of the burst START. The stream's stamp (``header`` clock,
+        ``get_stamps``, ``match``) is the burst CENTRE, ``start + num_samples / (2 *
+        sample_rate)`` (0.5 ms for 56000 samples at 56 MS/s). Compare
+        ``b210_host_time_ns(ticks) + num_samples / (2 * fs)`` with the stamp, or use
+        ``b210_burst_center_ns``. (Measured against a real file in b210-21 Step 5.)"""
         d = self.b210_clock_sync()
         if len(d) < 2:
             raise ValueError("need at least 2 clock-sync rows, %s has %d"
@@ -1159,6 +1166,27 @@ class CpslDS:
         # integer base + small float delta keeps ns precision (host ns exceeds 2**53)
         out = y[k] + np.rint((t - x[k]).astype(np.float64) * slope).astype(np.int64)
         return int(out[0]) if np.ndim(usrp_ticks) == 0 else out
+
+    def b210_burst_center_ns(self, idx, sample_rate_hz=None):
+        """Host realtime ns (int) of the CENTRE of the burst of the frame (newest at or
+        before it): ``b210_host_time_ns(usrp_ticks) + num_samples / (2 * sample_rate)``,
+        the clock-sync refinement of the burst's own stamp. ``sample_rate_hz`` defaults to
+        the USRP tick rate implied by ``usrp_ticks`` / ``usrp_time_s`` (the sample rate
+        when ticks are samples, as with the recorder's 56 MS/s); pass it to override.
+        ``-1`` when there is no burst yet."""
+        s = self._stream("b210_bursts")
+        j = self.sample_index("b210_bursts", idx)
+        if j < 0:
+            return -1
+        g = s._g
+        n, ticks = int(g["num_samples"][j]), int(g["usrp_ticks"][j])
+        if sample_rate_hz is None:
+            tk, ts = g["usrp_ticks"][:], g["usrp_time_s"][:]
+            if len(tk) < 2 or ts[-1] == ts[0]:
+                raise ValueError("cannot infer the sample rate from %d burst(s); pass "
+                                 "sample_rate_hz" % len(tk))
+            sample_rate_hz = float(tk[-1] - tk[0]) / float(ts[-1] - ts[0])
+        return self.b210_host_time_ns(ticks) + int(round(n / (2.0 * sample_rate_hz) * 1e9))
 
     def get_tf_message(self, idx):
         """The newest recorded /tf message at or before the frame: ``(n, 7)``

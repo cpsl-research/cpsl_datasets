@@ -66,6 +66,52 @@ def _mode_lines(c, streams):
     return out
 
 
+def _reference_lines(path):
+    """The reference ``CpslDS(path)`` would frame on (a sensor role, or the grid)."""
+    import warnings
+
+    from .cpsl_ds import CpslDS
+    try:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            with CpslDS(path) as ds:
+                ref, n, hz = ds.reference, len(ds), ds.grid_hz
+                stream = ds.roles.get(ref)
+    except Exception as e:  # ambiguous roles etc.: say so instead of hiding the summary
+        return ["reference: none (CpslDS(path) fails: %s)" % e]
+    if ref == "grid":
+        grid = "grid:%g Hz (uniform time grid, no sensor reference)" % hz
+        return ["reference: %s, %d frames" % (grid, n)]
+    return ["reference: %s (stream %s), %d frames" % (ref, stream, n)] if ref else \
+        ["reference: none, %d frames" % n]
+
+
+def _b210_lines(c, streams):
+    """One line per SarBurst stream: device (name prefix), bursts, valid count, iq
+    present?, run_dir, and the paired clock-sync stream."""
+    sync = [n for n, s in streams.items() if s.type.endswith("SarClockSync")]
+    out = []
+    for n, s in streams.items():
+        if not s.type.endswith("SarBurst"):
+            continue
+        g = s._g
+        dev = n[:-len("_bursts")] if n.endswith("_bursts") else n
+        valid = int(np.asarray(g["valid"][:]).astype(bool).sum()) if "valid" in g else -1
+        pair = dev + "_clock_sync"
+        pair = pair if pair in sync else (sync[0] if len(sync) == 1 else None)
+        if not out:
+            out.append("")
+            out.append("B210 streams:")
+        rd = s.attrs.get("b210_run_dir")
+        rd = rd.decode("utf-8", "replace") if isinstance(rd, bytes) else rd
+        out.append("  device %-10s %s: %d bursts, %d valid, iq %s, clock_sync %s, run_dir %s" % (
+            dev or "-", n, len(s), valid, "present" if "iq" in g else "absent",
+            "%s (%d rows)" % (pair, len(streams[pair])) if pair else "none", rd or "-"))
+    if len(out) > 3:
+        out.append("  several devices: CpslDS needs b210_bursts=\"<device>_bursts\" to bind one")
+    return out
+
+
 def report(path, out=print):
     """Print the summary of ``path`` through ``out``: format, capture_mode and
     sample_rate_hz, each stream (type, mode, samples, fill ratio, frame_id, time
@@ -89,6 +135,11 @@ def report(path, out=print):
         out("clock report (recv vs header):")
         for n, s in streams.items():
             out("  %-18s %s" % (n, _clock_line(clock_report(s))))
+        out("")
+        for line in _reference_lines(path):
+            out(line)
+        for line in _b210_lines(c, streams):
+            out(line)
         out("")
         edges = c.tf_static()
         out("tf_static: %d frames" % len(edges))
