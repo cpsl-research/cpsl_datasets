@@ -288,3 +288,15 @@ def test_inspect_prints_reference_and_b210_streams(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "reference: grid:10" in out and "device x" in out and "device y" in out
     assert "iq present" in out and "several devices" in out
+
+
+def test_two_device_b210_only_grid_has_frames_and_names_unbound_streams(tmp_path):
+    p = build_b210(tmp_path / "b.h5", devices=("a", "b"))
+    with pytest.warns(UserWarning, match="unbound.*a_bursts.*b_bursts"):
+        ds = CpslDS(p)
+    with ds:
+        assert ds.reference == "grid" and ds.num_frames > 0
+        assert ds._ref_t[0] >= T0
+    with pytest.warns(UserWarning, match="unbound"):  # header clock: clock-sync (-1) skipped
+        with CpslDS(p, clock="header") as ds:
+            assert ds.reference == "grid" and ds.num_frames > 0

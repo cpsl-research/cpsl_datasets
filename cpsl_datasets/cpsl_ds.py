@@ -176,7 +176,9 @@ class CpslDS:
     first/last stamps (``camera_info`` excluded; the union, with a warning, when
     they never overlap). Roles match the grid stamp as they would a sensor
     reference (``dt = t_sample - t_k``; windows partition rows exactly once). It is
-    also the default, with a warning, when no sensor role has samples.
+    also the default, with a warning, when no sensor role has samples. If no bound
+    stream has samples either (e.g. several B210 devices left unbound), the span is
+    that of every timed stream in the file (warning names them), so frames exist.
     **Which sample (``match=``).** ``"previous"`` (default) serves the newest
     sample at or before the reference stamp; ``match="nearest"`` serves the
     closest one in time either side (an exact tie goes to the earlier). Both
@@ -387,6 +389,7 @@ class CpslDS:
     # --- setup ----------------------------------------------------------
     def _setup(self, requested, reference, vicon=None):
         all_streams = self.capture.streams()
+        self._all_streams = all_streams
         self.streams = {}
         self._deferred = {}
         for role, name in requested.items():
@@ -466,7 +469,8 @@ class CpslDS:
     def _grid_times(self, hz):
         """int64 ns frame times of a uniform grid over the bound streams' span:
         the intersection of their [first, last] stamps (``camera_info`` excluded),
-        the union with a warning when they never overlap; ``period_ns`` integer."""
+        the union with a warning when they never overlap; when no bound stream has samples,
+        the span of every non-CameraInfo stream in the file (warning); ``period_ns`` integer."""
         period = int(round(1e9 / hz))
         if period < 1:
             raise ValueError("grid rate %g Hz is above 1 GHz" % hz)
@@ -474,7 +478,22 @@ class CpslDS:
         spans = [(int(t.min()), int(t.max())) for r, t in self._t.items()
                  if r != "camera_info" and len(t)]
         if not spans:
-            return np.zeros(0, np.int64)
+            # nothing bound has samples (e.g. several B210 devices left unbound): span the
+            # time ranges of every stream in the file so there is always a reference
+            used = []
+            for n, st in self._all_streams.items():
+                if st.type == "CameraInfo" or not len(st):
+                    continue
+                t = st.stamps("recv" if st.type == "SarClockSync" else self.clock)
+                if len(t) and not (self.clock == "header" and (t < 0).any()):
+                    spans.append((int(t.min()), int(t.max())))
+                    used.append(n)
+            if not spans:
+                return np.zeros(0, np.int64)
+            if self.sync:
+                warnings.warn("%s: no bound stream has samples; the grid spans the unbound "
+                              "stream(s) %s. Bind one (e.g. b210_bursts=<name>) to frame on it."
+                              % (self.dataset_path, ", ".join(used)), stacklevel=4)
         t0, t1 = max(a for a, _ in spans), min(b for _, b in spans)
         if t0 > t1:
             t0, t1 = min(a for a, _ in spans), max(b for _, b in spans)

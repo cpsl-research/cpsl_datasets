@@ -164,15 +164,13 @@ def test_default_grid_when_no_sensor_reference(tmp_path):
             assert ds.get_vehicle_odom_data(0).shape[1] == 14
 
 
-def test_all_empty_capture_has_no_frames(tmp_path):
+def test_all_streams_unbound_falls_back_to_the_file_span(tmp_path):
     p = mixed(tmp_path / "m.h5")
     with pytest.warns(UserWarning):
         ds = CpslDS(p, radar_adc=False, lidar=False, camera=False, vehicle_odom=False,
                     vehicle_vel=False)
-    with ds:
-        assert ds.num_frames == 0
-        with pytest.raises(IndexError):
-            ds._ref_time(0)
+    with ds:  # nothing bound, but the file has timed data: the grid spans all of it
+        assert ds.reference == "grid" and ds.num_frames > 0
 
 
 # --- regression: sensor-reference captures are untouched --------------------------
